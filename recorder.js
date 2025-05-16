@@ -19,6 +19,305 @@
   let currentTaskId = null;
   let dynamicObserver = null; // Properly declare the observer variable
 
+  // Add performance tracking utilities at the top of the file
+  const performanceMetrics = {
+    startTime: Date.now(),
+    events: {
+      total: 0,
+      byType: {},
+      processingTimes: []
+    },
+    memory: {
+      samples: [],
+      lastSample: null
+    },
+    mutations: {
+      total: 0,
+      byType: {},
+      processingTimes: []
+    }
+  };
+
+  // Function to track memory usage
+  function trackMemoryUsage() {
+    if (window.performance && window.performance.memory) {
+      const memory = window.performance.memory;
+      const sample = {
+        timestamp: Date.now(),
+        usedJSHeapSize: memory.usedJSHeapSize,
+        totalJSHeapSize: memory.totalJSHeapSize,
+        jsHeapSizeLimit: memory.jsHeapSizeLimit
+      };
+      
+      performanceMetrics.memory.samples.push(sample);
+      performanceMetrics.memory.lastSample = sample;
+      
+      // Keep only last 100 samples
+      if (performanceMetrics.memory.samples.length > 100) {
+        performanceMetrics.memory.samples.shift();
+      }
+      
+      console.log('Memory Usage:', {
+        used: formatBytes(sample.usedJSHeapSize),
+        total: formatBytes(sample.totalJSHeapSize),
+        limit: formatBytes(sample.jsHeapSizeLimit),
+        percentage: ((sample.usedJSHeapSize / sample.totalJSHeapSize) * 100).toFixed(2) + '%'
+      });
+    }
+  }
+
+  // Utility to format bytes
+  function formatBytes(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  // Function to track event timing
+  function trackEventTiming(eventType, startTime) {
+    const endTime = performance.now();
+    const duration = endTime - startTime;
+    
+    performanceMetrics.events.processingTimes.push({
+      type: eventType,
+      duration,
+      timestamp: Date.now()
+    });
+    
+    // Keep only last 1000 timing samples
+    if (performanceMetrics.events.processingTimes.length > 1000) {
+      performanceMetrics.events.processingTimes.shift();
+    }
+    
+    // Update event counts
+    performanceMetrics.events.total++;
+    performanceMetrics.events.byType[eventType] = (performanceMetrics.events.byType[eventType] || 0) + 1;
+    
+    return duration;
+  }
+
+  // Function to log performance metrics
+  function logPerformanceMetrics() {
+    const now = Date.now();
+    const uptime = now - performanceMetrics.startTime;
+    
+    // Calculate average processing times
+    const avgProcessingTime = performanceMetrics.events.processingTimes.reduce((acc, curr) => acc + curr.duration, 0) / 
+                             performanceMetrics.events.processingTimes.length;
+    
+    // Calculate event rates
+    const eventsPerSecond = performanceMetrics.events.total / (uptime / 1000);
+    
+    console.log('Performance Metrics:', {
+      uptime: formatDuration(uptime),
+      events: {
+        total: performanceMetrics.events.total,
+        byType: performanceMetrics.events.byType,
+        rate: eventsPerSecond.toFixed(2) + ' events/sec',
+        avgProcessingTime: avgProcessingTime.toFixed(2) + 'ms'
+      },
+      mutations: {
+        total: performanceMetrics.mutations.total,
+        byType: performanceMetrics.mutations.byType,
+        avgProcessingTime: performanceMetrics.mutations.processingTimes.length > 0 ?
+          (performanceMetrics.mutations.processingTimes.reduce((acc, curr) => acc + curr, 0) / 
+           performanceMetrics.mutations.processingTimes.length).toFixed(2) + 'ms' : 'N/A'
+      },
+      memory: performanceMetrics.memory.lastSample ? {
+        used: formatBytes(performanceMetrics.memory.lastSample.usedJSHeapSize),
+        total: formatBytes(performanceMetrics.memory.lastSample.totalJSHeapSize),
+        percentage: ((performanceMetrics.memory.lastSample.usedJSHeapSize / 
+                     performanceMetrics.memory.lastSample.totalJSHeapSize) * 100).toFixed(2) + '%'
+      } : 'Not available'
+    });
+  }
+
+  // Function to format duration
+  function formatDuration(ms) {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+  }
+
+  // Function to observe dynamic changes in the DOM
+  function observeDynamicChanges() {
+    console.log('Setting up MutationObserver for dynamic changes');
+    
+    const observer = new MutationObserver((mutations) => {
+      const startTime = performance.now();
+      console.log(`Processing ${mutations.length} mutations`);
+      
+      performanceMetrics.mutations.total += mutations.length;
+      
+      mutations.forEach((mutation, index) => {
+        const mutationStartTime = performance.now();
+        
+        // Track mutation type
+        performanceMetrics.mutations.byType[mutation.type] = 
+          (performanceMetrics.mutations.byType[mutation.type] || 0) + 1;
+        
+        // Safely log mutation details
+        console.log(`Mutation ${index + 1}:`, {
+          type: mutation.type,
+          target: mutation.target ? {
+            tagName: mutation.target.tagName,
+            id: mutation.target.id,
+            className: mutation.target.className
+          } : 'null',
+          addedNodes: mutation.addedNodes ? mutation.addedNodes.length : 0,
+          removedNodes: mutation.removedNodes ? mutation.removedNodes.length : 0,
+          attributeName: mutation.attributeName,
+          oldValue: mutation.oldValue
+        });
+
+        if (mutation.type === 'childList' && mutation.addedNodes) {
+          mutation.addedNodes.forEach((node, nodeIndex) => {
+            const nodeStartTime = performance.now();
+            
+            // Log detailed node information
+            console.log(`Processing added node ${nodeIndex + 1}:`, {
+              nodeType: node ? node.nodeType : 'null',
+              nodeName: node ? node.nodeName : 'null',
+              isElement: node ? node.nodeType === Node.ELEMENT_NODE : false,
+              hasAttributes: node ? node.getAttribute !== undefined : false,
+              hasTagName: node ? node.tagName !== undefined : false
+            });
+
+            // Only process Element nodes
+            if (node && node.nodeType === Node.ELEMENT_NODE) {
+              try {
+                const elementInfo = {
+                  tagName: node.tagName,
+                  id: node.id || '',
+                  className: node.className || '',
+                  attributes: Array.from(node.attributes || []).map(attr => ({
+                    name: attr.name,
+                    value: attr.value
+                  })),
+                  isInteractive: isInteractiveElement(node)
+                };
+
+                console.log('Element details:', elementInfo);
+
+                // Create a synthetic event for the added element
+                const syntheticEvent = {
+                  type: 'element_added',
+                  target: node,
+                  timestamp: Date.now()
+                };
+
+                recordEvent(syntheticEvent);
+
+                const nodeDuration = trackEventTiming('element_added', nodeStartTime);
+                console.log(`Node processing completed in ${nodeDuration.toFixed(2)}ms`);
+              } catch (error) {
+                console.warn('Error processing added node:', {
+                  error: error.message,
+                  stack: error.stack,
+                  node: node ? {
+                    type: node.nodeType,
+                    name: node.nodeName,
+                    id: node.id,
+                    className: node.className,
+                    hasAttributes: node.getAttribute !== undefined,
+                    hasTagName: node.tagName !== undefined
+                  } : 'null'
+                });
+              }
+            } else {
+              console.log('Skipping non-Element node:', {
+                type: node ? node.nodeType : 'null',
+                name: node ? node.nodeName : 'null',
+                reason: 'Not an Element node'
+              });
+            }
+          });
+        }
+        
+        const mutationDuration = performance.now() - mutationStartTime;
+        performanceMetrics.mutations.processingTimes.push(mutationDuration);
+        
+        // Keep only last 1000 mutation timing samples
+        if (performanceMetrics.mutations.processingTimes.length > 1000) {
+          performanceMetrics.mutations.processingTimes.shift();
+        }
+      });
+      
+      const totalDuration = performance.now() - startTime;
+      console.log(`Mutation batch processed in ${totalDuration.toFixed(2)}ms`);
+      
+      // Track memory usage after processing mutations
+      trackMemoryUsage();
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      characterData: true
+    });
+
+    console.log('MutationObserver setup complete');
+    return observer;
+  }
+
+  // Function to initialize recording (attach event listeners)
+  function initializeRecording() {
+    console.log("Initializing recording with event listeners");
+    
+    // Remove existing listeners first
+    const eventsToRemove = [
+      ['click', recordEvent],
+      ['mousedown', recordEvent],
+      ['mouseup', recordEvent],
+      ['mouseover', recordEvent],
+      ['mouseout', recordEvent],
+      ['keydown', recordEvent],
+      ['keyup', recordEvent],
+      ['keypress', recordEvent],
+      ['scroll', debouncedRecordScroll],
+      ['input', debouncedRecordInput],
+      ['focus', recordEvent],
+      ['blur', recordEvent],
+      ['change', debouncedRecordInput],
+      ['submit', recordEvent],
+      ['touchstart', recordEvent],
+      ['touchend', recordEvent],
+      ['touchmove', recordEvent]
+    ];
+
+    eventsToRemove.forEach(([event, handler]) => {
+      document.removeEventListener(event, handler, true);
+    });
+
+    // Add event listeners with capture phase
+    eventsToRemove.forEach(([event, handler]) => {
+      document.addEventListener(event, handler, true);
+      console.log(`Added event listener for ${event}`);
+    });
+    
+    // Add navigation event listeners
+    window.addEventListener('popstate', handleNavigation);
+    window.addEventListener('pushState', handleNavigation);
+    window.addEventListener('replaceState', handleNavigation);
+    
+    // Set up observer for dynamic elements
+    const observer = observeDynamicChanges();
+    
+    // Store the observer for cleanup
+    window.taskRecorderObserver = observer;
+    
+    // Verify recording state
+    console.log("Recording initialized with state:", {
+      isRecording,
+      currentTaskId,
+      eventListeners: eventsToRemove.map(([event]) => event)
+    });
+  }
+
   // Add debouncing utility
   function debounce(func, wait) {
     let timeout;
@@ -188,15 +487,72 @@
 
   // Helper to identify interactive elements that users can click or interact with
   function isInteractiveElement(element) {
+    // First check if element is valid and is an Element node
+    if (!element || typeof element !== 'object' || element.nodeType !== Node.ELEMENT_NODE) {
+      console.log('Element is not valid or not an Element node:', {
+        hasElement: !!element,
+        type: element ? typeof element : 'null',
+        nodeType: element ? element.nodeType : 'null',
+        expectedType: Node.ELEMENT_NODE
+      });
+      return false;
+    }
+
     const interactiveTags = ['button', 'input', 'select', 'textarea', 'a'];
     const interactiveRoles = ['button', 'link', 'checkbox', 'radio', 'textbox', 'combobox', 'listbox', 'menuitem'];
     
-    return (
-      interactiveTags.includes(element.tagName.toLowerCase()) ||
-      interactiveRoles.includes(element.getAttribute('role')) ||
-      element.onclick != null ||
-      element.getAttribute('tabindex') === '0'
-    );
+    try {
+      const tagName = element.tagName ? element.tagName.toLowerCase() : '';
+      const role = element.getAttribute ? element.getAttribute('role') : null;
+      const hasOnClick = element.onclick != null;
+      const tabIndex = element.getAttribute ? element.getAttribute('tabindex') : null;
+
+      const result = {
+        isInteractive: false,
+        reasons: []
+      };
+
+      if (interactiveTags.includes(tagName)) {
+        result.isInteractive = true;
+        result.reasons.push(`Has interactive tag: ${tagName}`);
+      }
+      if (role && interactiveRoles.includes(role)) {
+        result.isInteractive = true;
+        result.reasons.push(`Has interactive role: ${role}`);
+      }
+      if (hasOnClick) {
+        result.isInteractive = true;
+        result.reasons.push('Has onclick handler');
+      }
+      if (tabIndex === '0') {
+        result.isInteractive = true;
+        result.reasons.push('Has tabindex="0"');
+      }
+
+      console.log('Interactive element check result:', {
+        element: {
+          tagName,
+          role,
+          hasOnClick,
+          tabIndex
+        },
+        ...result
+      });
+
+      return result.isInteractive;
+    } catch (error) {
+      console.warn('Error checking if element is interactive:', {
+        error: error.message,
+        stack: error.stack,
+        element: {
+          tagName: element.tagName,
+          id: element.id,
+          className: element.className,
+          nodeType: element.nodeType
+        }
+      });
+      return false;
+    }
   }
 
   // Quick check for images and links
@@ -207,10 +563,10 @@
   // Get a CSS selector path to uniquely identify an element
   // This helps us find elements again later, even if the page changes
   function getElementCssPath(element) {
-    if (!element || element.nodeType !== 1) return '';
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) return '';
     
     let path = [];
-    while (element && element.nodeType === 1) {
+    while (element && element.nodeType === Node.ELEMENT_NODE) {
       let selector = element.tagName.toLowerCase();
       
       // If element has an ID, we can stop here - IDs are unique!
@@ -247,7 +603,7 @@
 
   // Utility function to get element XPath
   function getElementXPath(element) {
-    if (!element || element.nodeType !== 1) return '';
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) return '';
     
     if (element.id !== '') {
       return `//*[@id="${element.id}"]`;
@@ -258,50 +614,86 @@
     }
     
     let ix = 0;
-    const siblings = element.parentNode.childNodes;
+    const parent = element.parentNode;
+    
+    // Check if parent exists and has childNodes
+    if (!parent || !parent.childNodes) {
+      return '';
+    }
+    
+    const siblings = parent.childNodes;
     for (let i = 0; i < siblings.length; i++) {
       const sibling = siblings[i];
       if (sibling === element) {
-        return getElementXPath(element.parentNode) + '/' + element.tagName.toLowerCase() + '[' + (ix + 1) + ']';
+        const parentXPath = getElementXPath(parent);
+        // Only append if we got a valid parent XPath
+        return parentXPath ? `${parentXPath}/${element.tagName.toLowerCase()}[${ix + 1}]` : '';
       }
-      if (sibling.nodeType === 1 && sibling.tagName === element.tagName) {
+      if (sibling.nodeType === Node.ELEMENT_NODE && sibling.tagName === element.tagName) {
         ix++;
       }
     }
+    
+    return '';
   }
 
   // Function to get stable BID for an element
   function getStableBID(element) {
-    // First try to get a stable ID from common attributes
-    const attributes = [
-      { attr: 'data-testid', prefix: 'test-' },
-      { attr: 'aria-label', prefix: 'aria-' },
-      { attr: 'id', prefix: 'id-' },
-      { attr: 'name', prefix: 'name-' },
-      { attr: 'placeholder', prefix: 'place-' },
-      { attr: 'alt', prefix: 'alt-' },
-      { attr: 'title', prefix: 'title-' },
-      { attr: 'role', prefix: 'role-' }
-    ];
-
-    for (const { attr, prefix } of attributes) {
-      const value = element.getAttribute(attr);
-      if (value) {
-        return prefix + value.toLowerCase().replace(/[^a-z0-9]/g, '-');
-      }
+    if (!element || typeof element !== 'object' || element.nodeType !== Node.ELEMENT_NODE) {
+      console.log('Invalid element in getStableBID:', {
+        hasElement: !!element,
+        type: element ? typeof element : 'null',
+        nodeType: element ? element.nodeType : 'null'
+      });
+      return '';
     }
 
-    // Fallback: always generate a semantic hash
-    const tag = element.tagName.toLowerCase();
-    const classes = element.className && typeof element.className === 'string'
-      ? element.className.split(/\s+/).filter(c => c).join('-')
-      : '';
-    const text = element.textContent ? element.textContent.trim().substring(0, 30) : '';
-    const siblings = Array.from(element.parentNode?.children || []);
-    const index = siblings.indexOf(element);
-    const semanticId = `${tag}-${classes}-${text}-${index}`;
-    const hash = hashString(semanticId);
-    return `${tag}${classes ? '-' + classes : ''}-${hash}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+    try {
+      // First try to get a stable ID from common attributes
+      const attributes = [
+        { attr: 'data-testid', prefix: 'test-' },
+        { attr: 'aria-label', prefix: 'aria-' },
+        { attr: 'id', prefix: 'id-' },
+        { attr: 'name', prefix: 'name-' },
+        { attr: 'placeholder', prefix: 'place-' },
+        { attr: 'alt', prefix: 'alt-' },
+        { attr: 'title', prefix: 'title-' },
+        { attr: 'role', prefix: 'role-' }
+      ];
+
+      if (element.getAttribute) {
+        for (const { attr, prefix } of attributes) {
+          const value = element.getAttribute(attr);
+          if (value) {
+            return prefix + value.toLowerCase().replace(/[^a-z0-9]/g, '-');
+          }
+        }
+      }
+
+      // Fallback: always generate a semantic hash
+      const tag = element.tagName ? element.tagName.toLowerCase() : 'unknown';
+      const classes = element.className && typeof element.className === 'string'
+        ? element.className.split(/\s+/).filter(c => c).join('-')
+        : '';
+      const text = element.textContent ? element.textContent.trim().substring(0, 30) : '';
+      const siblings = Array.from(element.parentNode?.children || []);
+      const index = siblings.indexOf(element);
+      const semanticId = `${tag}-${classes}-${text}-${index}`;
+      const hash = hashString(semanticId);
+      return `${tag}${classes ? '-' + classes : ''}-${hash}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+    } catch (error) {
+      console.warn('Error getting stable BID:', {
+        error: error.message,
+        stack: error.stack,
+        element: {
+          tagName: element.tagName,
+          id: element.id,
+          className: element.className,
+          nodeType: element.nodeType
+        }
+      });
+      return '';
+    }
   }
 
   // Enhanced hash function for better uniqueness
@@ -456,93 +848,212 @@
     return validation.verified;
   }
 
+  // Function to safely send message to background script
+  function safeSendMessage(message) {
+    // Validate message
+    if (!message || typeof message !== 'object') {
+      console.warn('Invalid message format:', message);
+      return Promise.resolve();
+    }
+
+    // Check if we're in an extension context and chrome.runtime is available
+    if (typeof chrome === 'undefined' || !chrome || !chrome.runtime || !chrome.runtime.sendMessage) {
+      console.warn('Chrome runtime not available, storing event locally only');
+      // Store event locally if possible
+      try {
+        if (typeof localStorage !== 'undefined') {
+          const storedEvents = JSON.parse(localStorage.getItem('eventCaptureBackup') || '[]');
+          storedEvents.push({
+            ...message,
+            timestamp: Date.now(),
+            storedLocally: true
+          });
+          localStorage.setItem('eventCaptureBackup', JSON.stringify(storedEvents));
+        }
+      } catch (e) {
+        console.warn('Failed to store event locally:', e);
+      }
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      let hasResolved = false;
+      
+      try {
+        // Set a timeout to prevent hanging
+        const timeoutId = setTimeout(() => {
+          if (!hasResolved) {
+            hasResolved = true;
+            console.warn('Message send timeout');
+            resolve();
+          }
+        }, 2000); // 2 second timeout
+
+        // Send message and handle response
+        chrome.runtime.sendMessage(message, response => {
+          if (!hasResolved) {
+            hasResolved = true;
+            clearTimeout(timeoutId);
+            
+            if (chrome.runtime.lastError) {
+              console.warn('Error sending message:', chrome.runtime.lastError);
+              resolve();
+            } else {
+              resolve(response);
+            }
+          }
+        });
+      } catch (error) {
+        if (!hasResolved) {
+          hasResolved = true;
+          console.warn('Error sending message to background:', error);
+          resolve();
+        }
+      }
+    });
+  }
+
   // Enhanced function to record an event
   function recordEvent(event) {
     if (!isRecording) return;
     
-    // Create event object with BrowserGym-like structure
-    const eventData = {
-      type: event.type,
-      timestamp: Date.now(),
-      url: window.location.href,
-      target: {
-        tag: event.target.tagName,
-        id: event.target.id,
-        class: event.target.className,
-        text: event.target.textContent,
-        value: event.target.value,
-        isInteractive: isInteractiveElement(event.target),
-        xpath: getElementXPath(event.target),
-        cssPath: getElementCssPath(event.target),
-        bid: getStableBID(event.target),
-        a11y: getA11yIdentifiers(event.target),
-        attributes: Array.from(event.target.attributes).reduce((acc, attr) => {
-          acc[attr.name] = attr.value;
-          return acc;
-        }, {}),
-        boundingBox: event.target.getBoundingClientRect().toJSON()
-      }
-    };
-
-    // Add event-specific data
-    if (event.type === 'click') {
-      eventData.button = event.button;
-      eventData.buttons = event.buttons;
-      eventData.clientX = event.clientX;
-      eventData.clientY = event.clientY;
-      eventData.screenX = event.screenX;
-      eventData.screenY = event.screenY;
-      eventData.pageX = event.pageX;
-      eventData.pageY = event.pageY;
-      eventData.offsetX = event.offsetX;
-      eventData.offsetY = event.offsetY;
-      eventData.movementX = event.movementX;
-      eventData.movementY = event.movementY;
-      eventData.ctrlKey = event.ctrlKey;
-      eventData.altKey = event.altKey;
-      eventData.shiftKey = event.shiftKey;
-      eventData.metaKey = event.metaKey;
-      eventData.detail = event.detail; // For double clicks
+    // Validate that we have a valid event and target
+    if (!event || !event.target || typeof event.target !== 'object' || event.target.nodeType !== Node.ELEMENT_NODE) {
+      console.warn('Invalid event or target in recordEvent:', {
+        hasEvent: !!event,
+        hasTarget: !!event?.target,
+        targetType: event?.target ? typeof event.target : 'null',
+        targetNodeType: event?.target ? event.target.nodeType : 'null'
+      });
+      return;
     }
 
-    // Send event to background script
-    chrome.runtime.sendMessage({
-      type: 'recordedEvent',
-      event: eventData
-    });
-
-    // Also store locally for verification
-    events.push(eventData);
-
-    // Log click events for debugging
-    if (event.type === 'click') {
-      console.log('Click recorded:', {
+    try {
+      // Create event object with BrowserGym-like structure
+      const eventData = {
         type: event.type,
+        timestamp: Date.now(),
+        url: window.location.href,
         target: {
           tag: event.target.tagName,
           id: event.target.id,
           class: event.target.className,
-          text: event.target.textContent.trim().substring(0, 50),
+          text: event.target.textContent,
+          value: event.target.value,
           isInteractive: isInteractiveElement(event.target),
-          bid: eventData.target.bid
-        },
-        position: {
-          client: { x: event.clientX, y: event.clientY },
-          screen: { x: event.screenX, y: event.screenY },
-          page: { x: event.pageX, y: event.pageY }
-        },
-        buttons: {
-          button: event.button,
-          buttons: event.buttons,
-          detail: event.detail
-        },
-        modifiers: {
-          ctrl: event.ctrlKey,
-          alt: event.altKey,
-          shift: event.shiftKey,
-          meta: event.metaKey
-        },
-        timestamp: new Date(eventData.timestamp).toISOString()
+          xpath: getElementXPath(event.target),
+          cssPath: getElementCssPath(event.target),
+          bid: getStableBID(event.target),
+          a11y: getA11yIdentifiers(event.target),
+          attributes: Array.from(event.target.attributes || []).reduce((acc, attr) => {
+            acc[attr.name] = attr.value;
+            return acc;
+          }, {})
+        }
+      };
+
+      // Safely get bounding box if available
+      try {
+        if (event.target.getBoundingClientRect) {
+          const rect = event.target.getBoundingClientRect();
+          eventData.target.boundingBox = {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+            left: rect.left
+          };
+        }
+      } catch (rectError) {
+        console.warn('Error getting bounding rect:', {
+          error: rectError.message,
+          element: {
+            tagName: event.target.tagName,
+            id: event.target.id,
+            className: event.target.className
+          }
+        });
+      }
+
+      // Add event-specific data
+      if (event.type === 'click') {
+        eventData.button = event.button;
+        eventData.buttons = event.buttons;
+        eventData.clientX = event.clientX;
+        eventData.clientY = event.clientY;
+        eventData.screenX = event.screenX;
+        eventData.screenY = event.screenY;
+        eventData.pageX = event.pageX;
+        eventData.pageY = event.pageY;
+        eventData.offsetX = event.offsetX;
+        eventData.offsetY = event.offsetY;
+        eventData.movementX = event.movementX;
+        eventData.movementY = event.movementY;
+        eventData.ctrlKey = event.ctrlKey;
+        eventData.altKey = event.altKey;
+        eventData.shiftKey = event.shiftKey;
+        eventData.metaKey = event.metaKey;
+        eventData.detail = event.detail; // For double clicks
+      }
+
+      // Store locally first
+      events.push(eventData);
+
+      // Try to send to background script
+      safeSendMessage({
+        type: 'recordedEvent',
+        event: eventData
+      }).catch(error => {
+        console.warn('Error in message sending:', error);
+      });
+
+      // Log click events for debugging
+      if (event.type === 'click') {
+        console.log('Click recorded:', {
+          type: event.type,
+          target: {
+            tag: event.target.tagName,
+            id: event.target.id,
+            class: event.target.className,
+            text: event.target.textContent.trim().substring(0, 50),
+            isInteractive: isInteractiveElement(event.target),
+            bid: eventData.target.bid
+          },
+          position: {
+            client: { x: event.clientX, y: event.clientY },
+            screen: { x: event.screenX, y: event.screenY },
+            page: { x: event.pageX, y: event.pageY }
+          },
+          buttons: {
+            button: event.button,
+            buttons: event.buttons,
+            detail: event.detail
+          },
+          modifiers: {
+            ctrl: event.ctrlKey,
+            alt: event.altKey,
+            shift: event.shiftKey,
+            meta: event.metaKey
+          },
+          timestamp: new Date(eventData.timestamp).toISOString()
+        });
+      }
+    } catch (error) {
+      console.warn('Error recording event:', {
+        error: error.message,
+        stack: error.stack,
+        event: {
+          type: event?.type,
+          target: event?.target ? {
+            tagName: event.target.tagName,
+            id: event.target.id,
+            className: event.target.className,
+            nodeType: event.target.nodeType
+          } : null
+        }
       });
     }
   }
@@ -557,82 +1068,158 @@
 
   // Simple function to get accessibility identifiers for an element
   function getA11yIdentifiers(element) {
-    if (!element) return {};
+    if (!element || typeof element !== 'object' || element.nodeType !== Node.ELEMENT_NODE) {
+      console.log('Invalid element in getA11yIdentifiers:', {
+        hasElement: !!element,
+        type: element ? typeof element : 'null',
+        nodeType: element ? element.nodeType : 'null'
+      });
+      return {};
+    }
     
-    return {
-      // Role is the most important identifier in the a11y tree
-      role: element.getAttribute('role') || getImplicitRole(element),
-      
-      // Name is how the element is announced (crucial for identification)
-      name: getAccessibleName(element),
-      
-      // Basic path through the a11y tree (for locating in the tree)
-      path: getSimpleA11yPath(element),
-      
-      // Additional identifiers that help locate the element
-      id: element.id || '',
-      tagName: element.tagName.toLowerCase()
-    };
+    try {
+      return {
+        // Role is the most important identifier in the a11y tree
+        role: (element.getAttribute ? element.getAttribute('role') : null) || getImplicitRole(element),
+        
+        // Name is how the element is announced (crucial for identification)
+        name: getAccessibleName(element),
+        
+        // Basic path through the a11y tree (for locating in the tree)
+        path: getSimpleA11yPath(element),
+        
+        // Additional identifiers that help locate the element
+        id: element.id || '',
+        tagName: element.tagName ? element.tagName.toLowerCase() : ''
+      };
+    } catch (error) {
+      console.warn('Error getting a11y identifiers:', {
+        error: error.message,
+        stack: error.stack,
+        element: {
+          tagName: element.tagName,
+          id: element.id,
+          className: element.className,
+          nodeType: element.nodeType
+        }
+      });
+      return {};
+    }
   }
 
   // Get a simple path through the accessibility tree
   function getSimpleA11yPath(element) {
-    if (!element) return '';
-    
-    const path = [];
-    let current = element;
-    let depth = 0;
-    const MAX_DEPTH = 5; // Limit path depth to avoid excessive length
-    
-    while (current && current.nodeType === 1 && depth < MAX_DEPTH) {
-      const role = current.getAttribute('role') || getImplicitRole(current);
-      const name = getAccessibleName(current);
-      
-      let pathSegment = role || current.tagName.toLowerCase();
-      if (name) {
-        // Include name but keep it short
-        const shortName = name.length > 25 ? name.substring(0, 25) + '...' : name;
-        pathSegment += `[${shortName}]`;
-      }
-      
-      path.unshift(pathSegment);
-      current = current.parentElement;
-      depth++;
+    if (!element || typeof element !== 'object' || element.nodeType !== Node.ELEMENT_NODE) {
+      return '';
     }
     
-    return path.join(' > ');
+    try {
+      const path = [];
+      let current = element;
+      let depth = 0;
+      const MAX_DEPTH = 5; // Limit path depth to avoid excessive length
+      
+      while (current && current.nodeType === Node.ELEMENT_NODE && depth < MAX_DEPTH) {
+        const role = current.getAttribute ? current.getAttribute('role') : null || getImplicitRole(current);
+        const name = getAccessibleName(current);
+        
+        let pathSegment = role || (current.tagName ? current.tagName.toLowerCase() : '');
+        if (name) {
+          // Include name but keep it short
+          const shortName = name.length > 25 ? name.substring(0, 25) + '...' : name;
+          pathSegment += `[${shortName}]`;
+        }
+        
+        path.unshift(pathSegment);
+        current = current.parentElement;
+        depth++;
+      }
+      
+      return path.join(' > ');
+    } catch (error) {
+      console.warn('Error getting a11y path:', {
+        error: error.message,
+        stack: error.stack,
+        element: {
+          tagName: element.tagName,
+          id: element.id,
+          className: element.className,
+          nodeType: element.nodeType
+        }
+      });
+      return '';
+    }
   }
 
   // Simple function to get accessible name
   function getAccessibleName(element) {
-    // Check common name sources in priority order
-    return element.getAttribute('aria-label') || 
-           element.getAttribute('alt') || 
-           element.getAttribute('title') || 
-           element.textContent.trim().substring(0, 50) || '';
+    if (!element || typeof element !== 'object' || element.nodeType !== Node.ELEMENT_NODE) {
+      return '';
+    }
+
+    try {
+      // Check common name sources in priority order
+      if (element.getAttribute) {
+        return element.getAttribute('aria-label') || 
+               element.getAttribute('alt') || 
+               element.getAttribute('title') || 
+               (element.textContent ? element.textContent.trim().substring(0, 50) : '') || '';
+      }
+      return element.textContent ? element.textContent.trim().substring(0, 50) : '';
+    } catch (error) {
+      console.warn('Error getting accessible name:', {
+        error: error.message,
+        stack: error.stack,
+        element: {
+          tagName: element.tagName,
+          id: element.id,
+          className: element.className,
+          nodeType: element.nodeType
+        }
+      });
+      return '';
+    }
   }
 
   // Simple function to determine implicit role
   function getImplicitRole(element) {
-    const tagName = element.tagName.toLowerCase();
-    
-    // Very simplified mapping of common elements to roles
-    const simpleRoleMap = {
-      'a': 'link',
-      'button': 'button',
-      'h1': 'heading',
-      'h2': 'heading',
-      'h3': 'heading',
-      'input': 'textbox',
-      'select': 'combobox',
-      'textarea': 'textbox',
-      'img': 'img',
-      'ul': 'list',
-      'ol': 'list',
-      'li': 'listitem'
-    };
-    
-    return simpleRoleMap[tagName] || '';
+    if (!element || typeof element !== 'object' || element.nodeType !== Node.ELEMENT_NODE) {
+      return '';
+    }
+
+    try {
+      const tagName = element.tagName ? element.tagName.toLowerCase() : '';
+      
+      // Very simplified mapping of common elements to roles
+      const simpleRoleMap = {
+        'a': 'link',
+        'button': 'button',
+        'h1': 'heading',
+        'h2': 'heading',
+        'h3': 'heading',
+        'input': 'textbox',
+        'select': 'combobox',
+        'textarea': 'textbox',
+        'img': 'img',
+        'ul': 'list',
+        'ol': 'list',
+        'li': 'listitem'
+      };
+      
+      return simpleRoleMap[tagName] || '';
+    } catch (error) {
+      console.warn('Error getting implicit role:', {
+        error: error.message,
+        stack: error.stack,
+        element: {
+          tagName: element.tagName,
+          id: element.id,
+          className: element.className,
+          nodeType: element.nodeType
+        }
+      });
+      return '';
+    }
   }
 
   // Check if we should be recording when script loads
@@ -656,11 +1243,19 @@
     }
   });
 
-  // Function to initialize recording (attach event listeners)
-  function initializeRecording() {
-    console.log("Initializing recording with event listeners");
+  // Create debounced version of recordInput with longer delay
+  const debouncedRecordInput = debounce((e) => {
+    // Only record input events if the value has actually changed
+    if (e.target.value !== lastEventData.lastInputValue) {
+      recordEvent(e);
+    }
+  }, 500); // Increased to 500ms debounce
+
+  // Function to clean up event listeners
+  function cleanupEventListeners() {
+    console.log("Cleaning up event listeners");
     
-    // Remove existing listeners first
+    // Remove all event listeners
     const eventsToRemove = [
       ['click', recordEvent],
       ['mousedown', recordEvent],
@@ -685,86 +1280,22 @@
       document.removeEventListener(event, handler, true);
     });
     
-    // Add event listeners with capture phase
-    eventsToRemove.forEach(([event, handler]) => {
-      document.addEventListener(event, handler, true);
-      console.log(`Added event listener for ${event}`);
-    });
+    // Disconnect observer if it exists
+    if (dynamicObserver) {
+      try {
+        dynamicObserver.disconnect();
+        dynamicObserver = null;
+      } catch (e) {
+        console.error("Error disconnecting observer:", e);
+      }
+    }
     
-    // Add navigation event listeners
-    window.addEventListener('popstate', handleNavigation);
-    window.addEventListener('pushState', handleNavigation);
-    window.addEventListener('replaceState', handleNavigation);
-    
-    // Set up observer for dynamic elements
-    dynamicObserver = observeDynamicChanges();
-
-    // Verify recording state
-    console.log("Recording initialized with state:", {
-      isRecording,
-      currentTaskId,
-      eventListeners: eventsToRemove.map(([event]) => event)
-    });
+    console.log("Event listeners cleaned up");
   }
 
-  // Create debounced version of recordInput with longer delay
-  const debouncedRecordInput = debounce((e) => {
-    // Only record input events if the value has actually changed
-    if (e.target.value !== lastEventData.lastInputValue) {
-      recordEvent(e);
-    }
-  }, 500); // Increased to 500ms debounce
-
-  // Listen for messages from popup
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log("Message received in recorder:", message);
-    if (message.action === "startRecording") {
-      startRecording(message.taskId);
-      sendResponse({status: "recording started"});
-    } else if (message.action === "stopRecording") {
-      stopRecording();
-      sendResponse({status: "recording stopped"});
-    }
-    return true; // Required for async sendResponse
-  });
-
-  function startRecording(taskId) {
-    console.log("Recording started for task:", taskId);
-    isRecording = true;
-    currentTaskId = taskId;
-    
-    // Get existing events if any
-    chrome.storage.local.get(['taskHistory'], (data) => {
-      const taskHistory = data.taskHistory || {};
-      if (taskHistory[currentTaskId]) {
-        events = taskHistory[currentTaskId].events || [];
-      } else {
-        events = [];
-      }
-      
-      console.log("Retrieved existing events:", events);
-      
-      // Initialize recording - but wait for DOM to be ready
-      if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        initializeRecording();
-      } else {
-        document.addEventListener('DOMContentLoaded', initializeRecording);
-      }
-      
-      // Record initial page load as an event
-      const pageLoadEvent = {
-        type: EVENT_TYPES.PAGE_LOAD,
-        timestamp: formatTimestamp(Date.now()),
-        url: window.location.href,
-        title: document.title
-      };
-      events.push(pageLoadEvent);
-      saveEvents();
-    });
-  }
-
+  // Function to stop recording normally
   function stopRecording() {
-    console.log("Recording stopped");
+    console.log("Stopping recording");
     isRecording = false;
     
     // Remove event listeners
@@ -802,55 +1333,200 @@
       }
     }
     
-    // Log recorded events
-    console.log("Recorded events to save:", events);
-    
     // Save the events to the task history
     if (currentTaskId) {
-      chrome.storage.local.get(['taskHistory'], function(data) {
-        const taskHistory = data.taskHistory || {};
-        
-        if (taskHistory[currentTaskId]) {
-          taskHistory[currentTaskId].events = events;
+      return new Promise((resolve, reject) => {
+        chrome.storage.local.get(['taskHistory'], function(data) {
+          const taskHistory = data.taskHistory || {};
           
-          // Save the updated task history
-          chrome.storage.local.set({ taskHistory: taskHistory }, function() {
-            console.log("Events saved to task history");
-          });
-        }
+          if (taskHistory[currentTaskId]) {
+            taskHistory[currentTaskId].events = events;
+            
+            // Save the updated task history
+            chrome.storage.local.set({ taskHistory: taskHistory }, function() {
+              console.log("Events saved to task history");
+              currentTaskId = null;
+              resolve();
+            });
+          } else {
+            currentTaskId = null;
+            resolve();
+          }
+        });
       });
     }
     
     currentTaskId = null;
+    return Promise.resolve();
   }
 
-  function saveEvents() {
-    if (!isRecording || !currentTaskId) return;
+  // Function to force stop recording regardless of errors
+  function forceStopRecording() {
+    console.log("Force stopping recording");
+    
+    // Immediately set recording state to false
+    isRecording = false;
+    window.isRecording = false;
     
     try {
-      chrome.storage.local.get(['taskHistory'], function(data) {
-        const taskHistory = data.taskHistory || {};
-        
-        if (taskHistory[currentTaskId]) {
-          taskHistory[currentTaskId].events = events;
-          
-          // Save the updated task history
-          chrome.storage.local.set({ taskHistory: taskHistory }, function() {
-            console.log("Events saved to task history");
-            recoveryState.lastSavedTimestamp = Date.now();
-            recoveryState.errorCount = 0;
-          });
+      // Remove all event listeners
+      const eventsToRemove = [
+        ['click', recordEvent],
+        ['mousedown', recordEvent],
+        ['mouseup', recordEvent],
+        ['mouseover', recordEvent],
+        ['mouseout', recordEvent],
+        ['keydown', recordEvent],
+        ['keyup', recordEvent],
+        ['keypress', recordEvent],
+        ['scroll', debouncedRecordScroll],
+        ['input', debouncedRecordInput],
+        ['focus', recordEvent],
+        ['blur', recordEvent],
+        ['change', debouncedRecordInput],
+        ['submit', recordEvent],
+        ['touchstart', recordEvent],
+        ['touchend', recordEvent],
+        ['touchmove', recordEvent]
+      ];
+
+      eventsToRemove.forEach(([event, handler]) => {
+        try {
+          document.removeEventListener(event, handler, true);
+        } catch (e) {
+          console.warn(`Error removing ${event} listener:`, e);
         }
       });
-    } catch (error) {
-      console.error("Error saving events:", error);
-      recoveryState.errorCount++;
-      
-      // Attempt recovery if we've hit too many errors
-      if (recoveryState.errorCount >= recoveryState.maxErrors) {
-        attemptRecovery();
+    } catch (e) {
+      console.warn("Error during event listener cleanup:", e);
+    }
+    
+    // Disconnect observer if it exists
+    if (dynamicObserver) {
+      try {
+        dynamicObserver.disconnect();
+        dynamicObserver = null;
+      } catch (e) {
+        console.warn("Error disconnecting observer:", e);
       }
     }
+    
+    // Clear any pending timeouts
+    try {
+      if (window.timerInterval) {
+        clearInterval(window.timerInterval);
+        window.timerInterval = null;
+      }
+    } catch (e) {
+      console.warn("Error clearing timer interval:", e);
+    }
+    
+    // Save any remaining events
+    try {
+      if (currentTaskId && events.length > 0) {
+        chrome.storage.local.get(['taskHistory'], function(data) {
+          try {
+            const taskHistory = data.taskHistory || {};
+            if (taskHistory[currentTaskId]) {
+              taskHistory[currentTaskId].events = events;
+              chrome.storage.local.set({ taskHistory: taskHistory });
+            }
+          } catch (e) {
+            console.warn("Error saving final events:", e);
+          }
+        });
+      }
+    } catch (e) {
+      console.warn("Error during final event save:", e);
+    }
+    
+    // Reset all state
+    currentTaskId = null;
+    window.currentTaskId = null;
+    events = [];
+    window.recordedEvents = [];
+    
+    console.log("Recording force stopped");
+  }
+
+  // Listen for messages from the popup
+  if (typeof chrome !== 'undefined' && chrome && chrome.runtime && chrome.runtime.onMessage) {
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      console.log("Received message:", message);
+      
+      if (!message || typeof message !== 'object') {
+        console.error("Invalid message format received");
+        sendResponse({ status: "error", error: "Invalid message format" });
+        return false;
+      }
+
+      if (message.action === "startRecording") {
+        try {
+          if (!message.taskId) {
+            throw new Error("No taskId provided");
+          }
+          
+          console.log("Starting recording for task:", message.taskId);
+          startRecording(message.taskId);
+          sendResponse({ status: "recording started" });
+        } catch (error) {
+          console.error("Error starting recording:", error);
+          sendResponse({ status: "error", error: error.message });
+        }
+        return false; // Don't keep the message channel open for synchronous response
+      }
+      
+      if (message.action === "stopRecording") {
+        console.log("Stopping recording");
+        
+        // Immediately set recording state to false
+        isRecording = false;
+        
+        // Create a promise that will resolve with the response
+        const stopPromise = new Promise((resolve) => {
+          // First try normal stop
+          stopRecording()
+            .then(() => {
+              console.log("Recording stopped successfully");
+              resolve({ status: "recording stopped" });
+            })
+            .catch(error => {
+              console.error("Error during normal stop, forcing stop:", error);
+              // If normal stop fails, force stop
+              forceStopRecording();
+              resolve({ status: "recording force stopped" });
+            });
+        });
+
+        // Set a timeout to ensure we always send a response
+        const timeoutId = setTimeout(() => {
+          console.warn("Stop recording timeout - forcing stop");
+          forceStopRecording();
+          sendResponse({ status: "recording force stopped due to timeout" });
+        }, 2000); // 2 second timeout
+
+        // Handle the stop promise
+        stopPromise
+          .then(response => {
+            clearTimeout(timeoutId);
+            sendResponse(response);
+          })
+          .catch(error => {
+            clearTimeout(timeoutId);
+            console.error("Error in stop promise:", error);
+            forceStopRecording();
+            sendResponse({ status: "recording force stopped due to error" });
+          });
+
+        return true; // Keep the message channel open for async response
+      }
+      
+      // For any other messages, send an error response
+      sendResponse({ status: "error", error: "Unknown action" });
+      return false; // Don't keep the message channel open for synchronous response
+    });
+  } else {
+    console.warn('Chrome runtime message listener not available');
   }
 
   // Add debounced scroll handler

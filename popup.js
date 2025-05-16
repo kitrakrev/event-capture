@@ -5,6 +5,170 @@ function checkStorage() {
   });
 }
 
+let mediaRecorder;
+let recordedChunks = [];
+
+// Function to start screen recording
+async function startScreenRecording() {
+  console.log('Starting screen recording process...');
+  
+  try {
+    // Get the active tab
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    console.log('Active tab:', tab);
+
+    // Request screen capture using Chrome's extension API
+    const streamId = await new Promise((resolve) => {
+      chrome.desktopCapture.chooseDesktopMedia(
+        ['screen', 'window', 'tab'],
+        tab,
+        (streamId) => {
+          if (chrome.runtime.lastError) {
+            console.error('Error getting stream ID:', chrome.runtime.lastError);
+            resolve(null);
+          } else {
+            resolve(streamId);
+          }
+        }
+      );
+    });
+
+    if (!streamId) {
+      throw new Error('Failed to get screen capture stream ID');
+    }
+
+    console.log('Got stream ID:', streamId);
+
+    // Get the stream using the stream ID
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        mandatory: {
+          chromeMediaSource: 'desktop',
+          chromeMediaSourceId: streamId
+        }
+      }
+    });
+
+    console.log('Screen capture stream obtained');
+
+    // Create a video element to preview the stream
+    const previewVideo = document.createElement('video');
+    previewVideo.srcObject = stream;
+    previewVideo.style.display = 'none';
+    document.body.appendChild(previewVideo);
+    
+    // Start the preview
+    await previewVideo.play();
+    console.log('Preview started');
+
+    // Create MediaRecorder with Chrome-specific options
+    const mimeType = 'video/webm;codecs=vp9';
+    mediaRecorder = new MediaRecorder(stream, {
+      mimeType: mimeType,
+      videoBitsPerSecond: 2500000
+    });
+    
+    recordedChunks = [];
+    
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        recordedChunks.push(event.data);
+      }
+    };
+    
+    // Start recording
+    mediaRecorder.start(1000); // Capture data every second
+    console.log('MediaRecorder started');
+    
+    // Store the stream and video element for cleanup
+    window.screenStream = stream;
+    window.previewVideo = previewVideo;
+    
+    return true;
+  } catch (error) {
+    console.error("Error in startScreenRecording:", error);
+    console.error("Error stack:", error.stack);
+    alert("Failed to start screen recording: " + error.message);
+    return false;
+  }
+}
+
+// Function to store video in IndexedDB
+async function storeVideoInIndexedDB(taskId, videoBlob) {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('TaskVideos', 1);
+    
+    request.onerror = () => reject(request.error);
+    
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains('videos')) {
+        db.createObjectStore('videos');
+      }
+    };
+    
+    request.onsuccess = (event) => {
+      const db = event.target.result;
+      const transaction = db.transaction(['videos'], 'readwrite');
+      const store = transaction.objectStore('videos');
+      
+      const saveRequest = store.put(videoBlob, taskId);
+      
+      saveRequest.onsuccess = () => {
+        db.close();
+        resolve();
+      };
+      
+      saveRequest.onerror = () => {
+        db.close();
+        reject(saveRequest.error);
+      };
+    };
+  });
+}
+
+// Function to stop screen recording
+function stopScreenRecording() {
+  console.log('Stopping screen recording...');
+  
+  return new Promise((resolve) => {
+    if (!mediaRecorder) {
+      console.warn('No MediaRecorder instance found');
+      resolve(null);
+      return;
+    }
+    
+    mediaRecorder.onstop = async () => {
+      console.log('MediaRecorder stopped, creating blob...');
+      const blob = new Blob(recordedChunks, { type: 'video/webm' });
+      console.log('Blob created, size:', blob.size, 'bytes');
+      
+      // Clean up
+      console.log('Cleaning up resources...');
+      if (window.screenStream) {
+        console.log('Stopping screen stream tracks...');
+        window.screenStream.getTracks().forEach(track => {
+          console.log('Stopping track:', track.kind);
+          track.stop();
+        });
+        window.screenStream = null;
+      }
+      
+      if (window.previewVideo) {
+        console.log('Removing preview video element...');
+        window.previewVideo.remove();
+        window.previewVideo = null;
+      }
+      
+      console.log('Screen recording cleanup completed');
+      resolve(blob);
+    };
+    
+    console.log('Stopping MediaRecorder...');
+    mediaRecorder.stop();
+  });
+}
+
 // Call it when popup opens
 document.addEventListener('DOMContentLoaded', async () => {
   console.log("Popup opened");
@@ -61,54 +225,96 @@ document.getElementById('startTask').addEventListener('click', async () => {
     
     // Check if we can inject scripts into this tab
     if (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://') || tab.url.startsWith('brave://')) {
-      console.error("Cannot inject scripts into browser pages. Please navigate to a website first.");
+      console.error("Cannot inject scripts into browser pages");
       alert("Cannot record on browser pages. Please navigate to a website first.");
       return;
     }
-    
+
     // Generate a unique task ID
     const taskId = 'task_' + Date.now();
+    window.currentTaskId = taskId;
     const startTime = Date.now();
     
     // Initialize a new task record
-    chrome.storage.local.get(['taskHistory'], function(data) {
-      const taskHistory = data.taskHistory || {};
-      
-      // Create a new task entry
-      taskHistory[taskId] = {
-        id: taskId,
-        startTime: startTime,
-        events: [],
-        status: 'recording',
-        startUrl: tab.url,
-        title: document.getElementById('taskDescription').textContent || 'Untitled Task'
-      };
-      
-      // Save the updated task history
-      chrome.storage.local.set({ 
-        taskHistory: taskHistory,
-        currentTaskId: taskId,
-        isRecording: true,
-        recordingStartTime: startTime,
-        recordingTabId: tab.id
-      }, function() {
-        console.log("New task started:", taskId);
-      });
+    const data = await chrome.storage.local.get(['taskHistory']);
+    const taskHistory = data.taskHistory || {};
+    
+    // Create a new task entry
+    taskHistory[taskId] = {
+      id: taskId,
+      startTime: startTime,
+      events: [],
+      status: 'recording',
+      startUrl: tab.url,
+      title: document.getElementById('taskDescription').textContent || 'Untitled Task',
+      hasVideo: true
+    };
+    
+    // Save the updated task history
+    await chrome.storage.local.set({ 
+      taskHistory: taskHistory,
+      currentTaskId: taskId,
+      isRecording: true,
+      recordingStartTime: startTime,
+      recordingTabId: tab.id
     });
     
-    // Start timer
-    startTimer(startTime);
-    
-    // Inject content script to record user actions
+    console.log("New task started:", taskId);
+
+    // Start screen recording
+    const recordingStarted = await startScreenRecording();
+    if (!recordingStarted) {
+      alert("Failed to start screen recording. Please ensure you grant screen capture permissions.");
+      return;
+    }
+
+    // Inject the recorder script
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => {
+        // Reset the initialization flag
+        window.taskRecorderInitialized = false;
+      }
+    });
+
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       files: ['recorder.js']
     });
+
+    // Send message to start recording and wait for response
+    try {
+      const response = await new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          reject(new Error('Timeout waiting for start recording response'));
+        }, 5000); // 5 second timeout
+
+        chrome.tabs.sendMessage(tab.id, { 
+          action: "startRecording",
+          taskId: taskId
+        }, (response) => {
+          clearTimeout(timeoutId);
+          if (chrome.runtime.lastError) {
+            reject(chrome.runtime.lastError);
+          } else {
+            resolve(response);
+          }
+        });
+      });
+
+      if (!response || response.status !== "recording started") {
+        throw new Error("Failed to start recording properly");
+      }
+    } catch (error) {
+      console.error("Error starting recording:", error);
+      throw error;
+    }
     
-    // Send message to start recording
-    chrome.tabs.sendMessage(tab.id, { action: "startRecording", taskId: taskId });
+    // Start timer
+    startTimer(startTime);
   } catch (error) {
-    console.error("Error starting recording:", error);
+    console.error("Error in startTask click handler:", error);
+    console.error("Error stack:", error.stack);
     alert("Error: " + error.message);
     // Reset buttons
     document.getElementById('startTask').disabled = false;
@@ -117,55 +323,97 @@ document.getElementById('startTask').addEventListener('click', async () => {
 });
 
 document.getElementById('endTask').addEventListener('click', async () => {
+  console.log('End Task button clicked');
+  
   try {
     // Disable end button, enable start button
     document.getElementById('endTask').disabled = true;
     document.getElementById('startTask').disabled = false;
+    console.log('Button states updated');
     
     // Clear timer
-    if (timerInterval) clearInterval(timerInterval);
-    timerElement.textContent = '';
+    if (timerInterval) {
+      console.log('Clearing timer interval');
+      clearInterval(timerInterval);
+      timerElement.textContent = '';
+    }
     
-    // Get current task ID
-    chrome.storage.local.get(['currentTaskId', 'recordingTabId', 'taskHistory'], async (data) => {
-      const taskId = data.currentTaskId;
-      
-      if (taskId && data.taskHistory && data.taskHistory[taskId]) {
-        // Update task status
-        const taskHistory = data.taskHistory;
-        taskHistory[taskId].status = 'completed';
-        taskHistory[taskId].endTime = Date.now();
-        
-        // Get the current tab to record the end URL
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        taskHistory[taskId].endUrl = tab.url;
-        
-        // Save the updated task history
-        chrome.storage.local.set({ 
-          taskHistory: taskHistory,
-          isRecording: false,
-          recordingStartTime: null,
-          recordingTabId: null,
-          currentTaskId: null
+    // Get current task ID and tab ID first
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const data = await chrome.storage.local.get(['currentTaskId', 'recordingTabId', 'taskHistory']);
+    const taskId = data.currentTaskId;
+    
+    if (data.recordingTabId) {
+      try {
+        // Send message to stop recording and wait for response
+        const response = await new Promise((resolve, reject) => {
+          let hasResponded = false;
+          
+          const timeoutId = setTimeout(() => {
+            if (!hasResponded) {
+              hasResponded = true;
+              console.warn("Stop recording timeout - forcing stop");
+              resolve({ status: "recording force stopped due to timeout" });
+            }
+          }, 4000);
+
+          chrome.tabs.sendMessage(data.recordingTabId, { action: "stopRecording" }, (response) => {
+            if (!hasResponded) {
+              hasResponded = true;
+              clearTimeout(timeoutId);
+              if (chrome.runtime.lastError) {
+                console.error("Error sending stop message:", chrome.runtime.lastError);
+                resolve({ status: "recording force stopped due to error" });
+              } else {
+                console.log("Stop recording response:", response);
+                resolve(response || { status: "recording force stopped" });
+              }
+            }
+          });
         });
+
+        console.log("Final stop recording response:", response);
         
-        console.log("Task completed:", taskId);
-        
-        // Show task summary
-        showTaskSummary(taskId, taskHistory[taskId]);
-      }
-      
-      if (data.recordingTabId) {
-        try {
-          // Send message to stop recording
-          chrome.tabs.sendMessage(data.recordingTabId, { action: "stopRecording" });
-        } catch (e) {
-          console.error("Error sending stop message:", e);
+        // Update task status regardless of response
+        if (taskId && data.taskHistory && data.taskHistory[taskId]) {
+          const taskHistory = data.taskHistory;
+          taskHistory[taskId].status = 'completed';
+          taskHistory[taskId].endTime = Date.now();
+          taskHistory[taskId].hasVideo = true;
+          taskHistory[taskId].endUrl = tab.url;
+          
+          await chrome.storage.local.set({ 
+            taskHistory: taskHistory,
+            isRecording: false,
+            recordingStartTime: null,
+            recordingTabId: null,
+            currentTaskId: null
+          });
         }
+      } catch (e) {
+        console.error("Error in stop recording process:", e);
+        // Continue with cleanup even if stop message fails
       }
-    });
+    }
+    
+    console.log('Stopping screen recording...');
+    // Stop screen recording and get the video blob
+    const videoBlob = await stopScreenRecording();
+    console.log('Screen recording stopped, storing video...');
+    
+    if (videoBlob) {
+      // Store video in IndexedDB
+      await storeVideoInIndexedDB(taskId, videoBlob);
+      console.log('Video stored in IndexedDB');
+    }
+    
+    if (taskId && data.taskHistory && data.taskHistory[taskId]) {
+      // Show task summary
+      showTaskSummary(taskId, data.taskHistory[taskId]);
+    }
   } catch (error) {
-    console.error("Error stopping recording:", error);
+    console.error("Error in endTask click handler:", error);
+    console.error("Error stack:", error.stack);
     alert("Error: " + error.message);
   }
 });
@@ -202,6 +450,20 @@ function showTaskSummary(taskId, taskData) {
     <p><strong>End URL:</strong> ${taskData.endUrl}</p>
   `;
   resultsDiv.appendChild(details);
+  
+  // Add screen recording if available
+  if (taskData.screenRecordingUrl) {
+    const videoContainer = document.createElement('div');
+    videoContainer.style.marginTop = '20px';
+    videoContainer.innerHTML = `
+      <h3>Screen Recording</h3>
+      <video controls style="width: 100%; max-width: 800px;">
+        <source src="${taskData.screenRecordingUrl}" type="video/webm">
+        Your browser does not support the video tag.
+      </video>
+    `;
+    resultsDiv.appendChild(videoContainer);
+  }
   
   // Add view details button
   const viewButton = document.createElement('button');

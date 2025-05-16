@@ -14,7 +14,9 @@
     "scripting",
     "storage",
     "tabs",
-    "downloads"
+    "downloads",
+    "desktopCapture",
+    "system.display"
   ],
   "host_permissions": [
     "<all_urls>"
