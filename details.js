@@ -7,11 +7,12 @@ document.getElementById('eventCount').textContent = '';
 
 async function pushToMongoDB(data) {
   try {
-    const response = await fetch('http://localhost:3000/api/events', {
+    const response = await fetch('https://4ba7541c-d467-4d08-ac05-8531ce5b74a4-00-2mvyzjzumqrkj.riker.replit.dev/api/events', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
+      credentials: 'omit', // Don't send credentials
       body: JSON.stringify({
         taskId: taskId,
         events: data
