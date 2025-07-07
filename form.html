@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>New Task</title>
+  <style>
+    body { font-family: sans-serif; padding: 1em; }
+    label, textarea, input { display: block; margin: 0.5em 0; width: 100%; }
+    .toggle-button {
+      display: inline-block;
+      padding: 0.5em 1em;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: #f0f0f0;
+      cursor: pointer;
+      user-select: none;
+    }
+    .toggle-button.on {
+      background: #4caf50;
+      color: #fff;
+    }
+    button { margin-top: 1em; padding: 0.5em 1em; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h2>New Task</h2>
+
+  <label>
+    Task Name:
+    <input type="text" id="taskName" required>
+  </label>
+
+  <label>
+    Task Description:
+    <textarea id="taskDesc" rows="3" required></textarea>
+  </label>
+
+  <!-- Toggle instead of radio -->
+  <button id="recordToggle" class="toggle-button" data-record-video="false">
+    Record Video: Off
+  </button>
+
+  <button id="startRecording">Start Recording</button>
+
+<script src="form.js"></script>
+</body>
+</html>

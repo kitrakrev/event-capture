@@ -1,6 +1,43 @@
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === chrome.runtime.OnInstalledReason.UPDATE) {
+    // Extension was just updated
+    reloadAllTabs();
+  }
+});
+function reloadAllTabs() {
+  chrome.tabs.query({}, (tabs) => {
+    for (const tab of tabs) {
+      // skip chrome:// and extension pages
+      if (!tab.url.startsWith('chrome://') &&
+          !tab.url.startsWith('edge://') &&
+          !tab.url.startsWith('chrome-extension://')) {
+        chrome.tabs.reload(tab.id);
+      }
+    }
+  });
+}
+
+
+
+chrome.runtime.onInstalled.addListener(details => {
+  if (details.reason === 'install' || details.reason === 'update') {
+    chrome.tabs.query({ url: ['<all_urls>'] }, tabs => {
+      for (const t of tabs) {
+        chrome.scripting.executeScript({
+          target: { tabId: t.id },
+          files: ['recorder.js']
+        }).catch(console.error);
+      }
+    });
+  }
+});
 // Track navigation events
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete') {
+
+    if (tab.url && tab.url.startsWith('chrome-extension://')) {
+      return;
+    }
     // Check if we're recording
     chrome.storage.local.get(['isRecording', 'recordingTabId'], (data) => {
       if (data.isRecording && data.recordingTabId === tabId) {
@@ -16,62 +53,25 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   }
 });
 
-// Add storage quota management
-const STORAGE_KEYS = {
-  TASK_HISTORY: 'taskHistory',
-  IS_RECORDING: 'isRecording',
-  CURRENT_TASK_ID: 'currentTaskId',
-  RECORDING_TAB_ID: 'recordingTabId'
-};
-
-// Function to clean up old data
-async function cleanupStorage() {
-  try {
-    const data = await chrome.storage.local.get([STORAGE_KEYS.TASK_HISTORY]);
-    const taskHistory = data.taskHistory || {};
-    
-    // Get all task IDs and their timestamps
-    const tasks = Object.entries(taskHistory).map(([id, task]) => ({
-      id,
-      timestamp: task.timestamp || 0,
-      size: JSON.stringify(task).length
-    }));
-    
-    // Sort by timestamp (oldest first)
-    tasks.sort((a, b) => a.timestamp - b.timestamp);
-    
-    // Calculate total size
-    const totalSize = tasks.reduce((sum, task) => sum + task.size, 0);
-    const maxSize = 4.5 * 1024 * 1024; // 4.5MB (leaving 0.5MB buffer)
-    
-    // If we're over the limit, remove oldest tasks
-    if (totalSize > maxSize) {
-      const tasksToRemove = [];
-      let currentSize = totalSize;
-      
-      for (const task of tasks) {
-        if (currentSize <= maxSize) break;
-        tasksToRemove.push(task.id);
-        currentSize -= task.size;
-      }
-      
-      // Remove old tasks
-      for (const id of tasksToRemove) {
-        delete taskHistory[id];
-      }
-      
-      // Save cleaned up data
-      await chrome.storage.local.set({ [STORAGE_KEYS.TASK_HISTORY]: taskHistory });
-      console.log(`Cleaned up ${tasksToRemove.length} old tasks`);
-    }
-  } catch (error) {
-    console.error('Error cleaning up storage:', error);
-  }
-}
-
 // Listen for events from recorder.js
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if(message.action == "initiateRecording"){
+    startScreenCapture(message.taskId);
+    sendResponse({status: "recording started"});
+  }
   if (message.type === 'recordedEvent') {
+    console.log("Received recorded event:", {
+      type: message.event.type,
+      target: {
+        tag: message.event.target.tag,
+        id: message.event.target.id,
+        bid: message.event.target.bid,
+        isInteractive: message.event.target.isInteractive
+      },
+      timestamp: new Date(message.event.timestamp).toISOString()
+    }
+  );
+    
     // Get current task info
     chrome.storage.local.get(['isRecording', 'currentTaskId', 'taskHistory'], (data) => {
       if (data.isRecording && data.currentTaskId && data.taskHistory) {
@@ -80,26 +80,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         
         if (taskHistory[taskId]) {
           const events = taskHistory[taskId].events || [];
+          
+          // Add the event to the task history
           events.push(message.event);
           taskHistory[taskId].events = events;
           
-          // Save without any quota checks
+          // Save updated task history
           chrome.storage.local.set({ taskHistory: taskHistory }, () => {
-            sendResponse({ success: true });
+            console.log("Event saved to task history:", {
+              type: message.event.type,
+              totalEvents: events.length,
+              timestamp: new Date(message.event.timestamp).toISOString()
+            });
           });
-        } else {
-          sendResponse({ success: false, error: 'Task not found' });
         }
-      } else {
-        sendResponse({ success: false, error: 'Not recording' });
       }
-    });
+    }
+  
+  ); sendResponse({status: "recording event received"});
   } else if (message.action === "viewTaskDetails") {
     // Manifest V3 background scripts cannot use DOM APIs.
     // Open a new tab to details.html and pass the taskId as a query parameter.
     chrome.tabs.create({
       url: `details.html?taskId=${message.taskId}`
     });
+    sendResponse({status: "task details viewed"});
     // The UI for viewing and filtering events should be implemented in details.html/details.js
   } else if (message.action === "exportTask") {
     chrome.storage.local.get(['taskHistory'], (data) => {
@@ -119,6 +124,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       }
     });
+    sendResponse({status: "task exported"});
   } else if (message.action === "deleteTask") {
     chrome.storage.local.get(['taskHistory'], (data) => {
       const taskHistory = data.taskHistory || {};
@@ -131,46 +137,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       }
     });
-  } else if (message.action === 'captureScreenshot') {
-    // Get the active tab
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (!tabs || tabs.length === 0) {
-        sendResponse({ error: 'No active tab found' });
-        return;
-      }
-
-      const activeTab = tabs[0];
-
-      // Check if we're on a restricted page
-      if (activeTab.url.startsWith('chrome://') || 
-          activeTab.url.startsWith('chrome-extension://') ||
-          activeTab.url.startsWith('about:')) {
-        sendResponse({ error: 'Cannot capture screenshot on restricted page' });
-        return;
-      }
-
-      // Capture the screenshot
-      chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
-        if (chrome.runtime.lastError) {
-          sendResponse({ error: chrome.runtime.lastError.message });
-          return;
-        }
-
-        if (!dataUrl) {
-          sendResponse({ error: 'No screenshot data received' });
-          return;
-        }
-
-        sendResponse({ dataUrl: dataUrl });
-      });
-    });
+    sendResponse({status: "task deleted"});
   }
-  return true; // Keep the message channel open
+  
+  return true; // Required for async sendResponse
 });
 
 // Listen for tab updates (including URL changes)
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete') {
+    
+    if (tab.url && tab.url.startsWith('chrome-extension://')) {
+      return;
+    }
     // Check if we're recording and this is the recording tab
     chrome.storage.local.get(['isRecording', 'recordingTabId', 'currentTaskId', 'taskHistory'], (data) => {
       if (data.isRecording && data.recordingTabId === tabId && data.currentTaskId) {
@@ -240,5 +219,35 @@ chrome.tabs.onCreated.addListener((tab) => {
   });
 });
 
-// Add periodic storage cleanup
-setInterval(cleanupStorage, 5 * 60 * 1000); // Run every 5 minutes
+
+
+
+const startScreenCapture = async (taskId) => {
+  await chrome.tabs.query({'active': true, 'lastFocusedWindow': true, 'currentWindow': true}, async function (tabs) {
+    // Get current tab to focus on it after start recording on recording screen tab
+    const currentTab = tabs[0];
+
+    // Create recording screen tab
+    const tab = await chrome.tabs.create({
+      url: chrome.runtime.getURL('screencapture.html'),
+      pinned: true,
+      active: true,
+    });
+
+    // Wait for recording screen tab to be loaded and send message to it with the currentTab
+    chrome.tabs.onUpdated.addListener(async function listener(tabId, info) {
+      if (tabId === tab.id && info.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(listener);
+
+        await chrome.tabs.sendMessage(tabId, {
+          action: 'startScreenCapture',
+          taskId: taskId,
+          body: {
+            currentTab: currentTab,
+          },
+        });
+      }
+    });
+  });
+};
+

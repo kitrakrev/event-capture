@@ -188,15 +188,32 @@
 
   // Helper to identify interactive elements that users can click or interact with
   function isInteractiveElement(element) {
-    const interactiveTags = ['button', 'input', 'select', 'textarea', 'a'];
-    const interactiveRoles = ['button', 'link', 'checkbox', 'radio', 'textbox', 'combobox', 'listbox', 'menuitem'];
+    if (!element) return false;
     
-    return (
-      interactiveTags.includes(element.tagName.toLowerCase()) ||
-      interactiveRoles.includes(element.getAttribute('role')) ||
-      element.onclick != null ||
-      element.getAttribute('tabindex') === '0'
-    );
+    const tagName = element.tagName.toLowerCase();
+    const role = element.getAttribute('role');
+    const type = element.getAttribute('type');
+    
+    // Check for button-like elements
+    const isButton = 
+      tagName === 'button' ||
+      role === 'button' ||
+      type === 'submit' ||
+      type === 'button' ||
+      element.closest('button') !== null ||
+      element.closest('[role="button"]') !== null ||
+      element.closest('input[type="submit"]') !== null ||
+      element.closest('input[type="button"]') !== null;
+
+    // Check for other interactive elements
+    const interactiveTags = ['a', 'input', 'select', 'textarea'];
+    const interactiveRoles = ['link', 'checkbox', 'radio', 'textbox', 'combobox', 'listbox', 'menuitem'];
+    
+    return isButton || 
+           interactiveTags.includes(tagName) ||
+           interactiveRoles.includes(role) ||
+           element.onclick != null ||
+           element.getAttribute('tabindex') === '0';
   }
 
   // Quick check for images and links
@@ -456,104 +473,52 @@
     return validation.verified;
   }
 
-  // Enhanced function to record an event
-  function recordEvent(event) {
-    if (!isRecording) return;
-    
-    // Create event object with BrowserGym-like structure
-    const eventData = {
-      type: event.type,
-      timestamp: Date.now(),
-      url: window.location.href,
+  // Add all click-related event listeners
+  const clickEvents = [
+    'click',
+    'mousedown',
+    'mouseup',
+    'dblclick',
+    'contextmenu',
+    'auxclick'
+  ];
+
+  clickEvents.forEach(eventType => {
+    document.addEventListener(eventType, (event) => {
+      const target = event.target;
+      const isButton = isInteractiveElement(target);
+      
+      if (isButton) {
+        console.log(`Button click detected:`, {
+          type: eventType,
+          target: {
+            tag: target.tagName,
+            id: target.id,
+            class: target.className,
+            type: target.type,
+            role: target.getAttribute('role'),
+            text: target.textContent.trim().substring(0, 50)
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      recordEvent(event);
+    }, true);
+  });
+
+  // Handle form submissions
+  document.addEventListener('submit', (event) => {
+    console.log('Capturing form submission:', {
       target: {
         tag: event.target.tagName,
         id: event.target.id,
-        class: event.target.className,
-        text: event.target.textContent,
-        value: event.target.value,
-        isInteractive: isInteractiveElement(event.target),
-        xpath: getElementXPath(event.target),
-        cssPath: getElementCssPath(event.target),
-        bid: getStableBID(event.target),
-        a11y: getA11yIdentifiers(event.target),
-        attributes: Array.from(event.target.attributes).reduce((acc, attr) => {
-          acc[attr.name] = attr.value;
-          return acc;
-        }, {}),
-        boundingBox: event.target.getBoundingClientRect().toJSON()
-      }
-    };
-
-    // Add event-specific data
-    if (event.type === 'click') {
-      eventData.button = event.button;
-      eventData.buttons = event.buttons;
-      eventData.clientX = event.clientX;
-      eventData.clientY = event.clientY;
-      eventData.screenX = event.screenX;
-      eventData.screenY = event.screenY;
-      eventData.pageX = event.pageX;
-      eventData.pageY = event.pageY;
-      eventData.offsetX = event.offsetX;
-      eventData.offsetY = event.offsetY;
-      eventData.movementX = event.movementX;
-      eventData.movementY = event.movementY;
-      eventData.ctrlKey = event.ctrlKey;
-      eventData.altKey = event.altKey;
-      eventData.shiftKey = event.shiftKey;
-      eventData.metaKey = event.metaKey;
-      eventData.detail = event.detail; // For double clicks
-    }
-
-    // Send event to background script
-    chrome.runtime.sendMessage({
-      type: 'recordedEvent',
-      event: eventData
+        class: event.target.className
+      },
+      timestamp: new Date().toISOString()
     });
-
-    // Also store locally for verification
-    events.push(eventData);
-
-    // Log click events for debugging
-    if (event.type === 'click') {
-      console.log('Click recorded:', {
-        type: event.type,
-        target: {
-          tag: event.target.tagName,
-          id: event.target.id,
-          class: event.target.className,
-          text: event.target.textContent.trim().substring(0, 50),
-          isInteractive: isInteractiveElement(event.target),
-          bid: eventData.target.bid
-        },
-        position: {
-          client: { x: event.clientX, y: event.clientY },
-          screen: { x: event.screenX, y: event.screenY },
-          page: { x: event.pageX, y: event.pageY }
-        },
-        buttons: {
-          button: event.button,
-          buttons: event.buttons,
-          detail: event.detail
-        },
-        modifiers: {
-          ctrl: event.ctrlKey,
-          alt: event.altKey,
-          shift: event.shiftKey,
-          meta: event.metaKey
-        },
-        timestamp: new Date(eventData.timestamp).toISOString()
-      });
-    }
-  }
-
-  // Update event listeners to use capture phase
-  document.addEventListener('click', recordEvent, true);
-  document.addEventListener('mousedown', recordEvent, true);
-  document.addEventListener('mouseup', recordEvent, true);
-  document.addEventListener('keydown', recordEvent, true);
-  document.addEventListener('input', recordEvent, true);
-  document.addEventListener('change', recordEvent, true);
+    recordEvent(event);
+  }, true);
 
   // Simple function to get accessibility identifiers for an element
   function getA11yIdentifiers(element) {
@@ -568,6 +533,8 @@
       
       // Basic path through the a11y tree (for locating in the tree)
       path: getSimpleA11yPath(element),
+
+
       
       // Additional identifiers that help locate the element
       id: element.id || '',
@@ -824,33 +791,18 @@
     currentTaskId = null;
   }
 
+  // Update saveEvents function to store all events without limits
   function saveEvents() {
     if (!isRecording || !currentTaskId) return;
     
-    try {
-      chrome.storage.local.get(['taskHistory'], function(data) {
-        const taskHistory = data.taskHistory || {};
-        
-        if (taskHistory[currentTaskId]) {
-          taskHistory[currentTaskId].events = events;
-          
-          // Save the updated task history
-          chrome.storage.local.set({ taskHistory: taskHistory }, function() {
-            console.log("Events saved to task history");
-            recoveryState.lastSavedTimestamp = Date.now();
-            recoveryState.errorCount = 0;
-          });
-        }
-      });
-    } catch (error) {
-      console.error("Error saving events:", error);
-      recoveryState.errorCount++;
+    chrome.storage.local.get(['taskHistory'], function(data) {
+      const taskHistory = data.taskHistory || {};
       
-      // Attempt recovery if we've hit too many errors
-      if (recoveryState.errorCount >= recoveryState.maxErrors) {
-        attemptRecovery();
+      if (taskHistory[currentTaskId]) {
+        taskHistory[currentTaskId].events = events;
+        chrome.storage.local.set({ taskHistory: taskHistory });
       }
-    }
+    });
   }
 
   // Add debounced scroll handler
@@ -1024,4 +976,96 @@
       });
     }
   }, true);
+
+  // Update recordEvent function to handle async responses
+  async function recordEvent(event) {
+    if (!isRecording) return;
+    
+    // Create event object with BrowserGym-like structure
+    const eventData = {
+      type: event.type,
+      timestamp: Date.now(),
+      url: window.location.href,
+      target: {
+        tag: event.target.tagName,
+        id: event.target.id,
+        class: event.target.className,
+        text: event.target.textContent,
+        value: event.target.value,
+        isInteractive: isInteractiveElement(event.target),
+        xpath: getElementXPath(event.target),
+        cssPath: getElementCssPath(event.target),
+        bid: getStableBID(event.target),
+        a11y: await getA11yIdentifiers(event.target),
+        screenshot: (event.type === 'click' || 
+                   event.type === 'mousedown' || 
+                   event.type === 'mouseup' || 
+                   event.type === 'dblclick' || 
+                   event.type === 'contextmenu' || 
+                   event.type === 'auxclick' || 
+                   (event.target.tagName.toLowerCase() === 'button') || 
+                   (event.target.getAttribute('role') === 'button') || 
+                   (event.target.type === 'submit') || 
+                   (event.target.type === 'button') ||
+                   (event.target.closest('button') !== null) ||
+                   (event.target.closest('[role="button"]') !== null) ||
+                   (event.target.closest('input[type="submit"]') !== null) ||
+                   (event.target.closest('input[type="button"]') !== null)) ? await new Promise((resolve) => {
+          // Send message to background script
+          chrome.runtime.sendMessage(
+            { 
+              action: 'captureScreenshot',
+              pageInfo: {
+                url: window.location.href,
+                protocol: window.location.protocol
+              }
+            },
+            (response) => {
+              if (chrome.runtime.lastError) {
+                resolve(null);
+                return;
+              }
+              resolve(response?.dataUrl || null);
+            }
+          );
+        }) : null,
+        attributes: Array.from(event.target.attributes).reduce((acc, attr) => {
+          acc[attr.name] = attr.value;
+          return acc;
+        }, {}),
+        boundingBox: event.target.getBoundingClientRect().toJSON()
+      }
+    };
+
+    // Add event-specific data
+    if (event.type === 'click' || event.type === 'mousedown' || event.type === 'mouseup') {
+      eventData.button = event.button;
+      eventData.buttons = event.buttons;
+      eventData.clientX = event.clientX;
+      eventData.clientY = event.clientY;
+      eventData.screenX = event.screenX;
+      eventData.screenY = event.screenY;
+      eventData.pageX = event.pageX;
+      eventData.pageY = event.pageY;
+      eventData.offsetX = event.offsetX;
+      eventData.offsetY = event.offsetY;
+      eventData.movementX = event.movementX;
+      eventData.movementY = event.movementY;
+      eventData.ctrlKey = event.ctrlKey;
+      eventData.altKey = event.altKey;
+      eventData.shiftKey = event.shiftKey;
+      eventData.metaKey = event.metaKey;
+      eventData.detail = event.detail;
+    }
+
+    // Send event to background script
+    chrome.runtime.sendMessage({
+      type: 'recordedEvent',
+      event: eventData
+    }, (response) => {
+      if (!chrome.runtime.lastError) {
+        events.push(eventData);
+      }
+    });
+  }
 })(); // End of IIFE
