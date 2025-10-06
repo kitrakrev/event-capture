@@ -1,8 +1,7 @@
-"""FastAPI service providing a secure MongoDB API facade and event ingestion.
+"""
 
 This service exposes a minimal API to ingest recorded browser events into
-MongoDB and optionally mirror the submitted payload to disk under
-<project-root>/intermediate/<ISO-timestamp>.
+MongoDB and in the local directory <project-root>/intermediate/<ISO-timestamp>.
 """
 
 from __future__ import annotations
