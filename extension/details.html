@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Task Details</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    pre { background: #f5f5f5; padding: 10px; border-radius: 5px; }
+    .controls { margin-bottom: 20px; }
+    select, button { font-size: 1em; margin-right: 10px; }
+    #pushToMongoBtn { background-color: #4CAF50; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+    #pushToMongoBtn:hover { background-color: #45a049; }
+  </style>
+</head>
+<body>
+  <h1 id="taskTitle">Task Details</h1>
+  <div class="controls">
+    <label for="eventTypeFilter">Filter by type:</label>
+    <select id="eventTypeFilter"></select>
+    <button id="sortBtn">Sort by Event Type</button>
+    <button id="pushToMongoBtn">Push to MongoDB</button>
+  </div>
+  <div id="eventCount"></div>
+  <pre id="eventData"></pre>
+  <script src="config.js"></script>
+  <script src="details.js"></script>
+</body>
+</html> 

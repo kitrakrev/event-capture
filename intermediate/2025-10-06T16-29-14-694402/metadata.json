@@ -1,0 +1,13 @@
+{
+  "savedAt": "2025-10-06T16:29:14.695361",
+  "mongo": {
+    "insertedId": "68e3ee5aab720d74ac6e64f8"
+  },
+  "counts": {
+    "events": 4
+  },
+  "paths": {
+    "payload": "/Users/siddharthsuresh/Downloads/capstone/capstone_git/new/event-capture/intermediate/2025-10-06T16-29-14-694402/payload.json",
+    "metadata": "/Users/siddharthsuresh/Downloads/capstone/capstone_git/new/event-capture/intermediate/2025-10-06T16-29-14-694402/metadata.json"
+  }
+}

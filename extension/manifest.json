@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Task Recorder",
+  "version": "1.0",
+  "description": "Records user actions and screen during tasks",
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs",
+    "downloads"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["recorder.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["event-config.json"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "incognito": "split"
+}

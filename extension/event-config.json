@@ -1,0 +1,152 @@
+{
+  "domEvents": [
+    {
+      "name": "click",
+      "enabled": true,
+      "handler": "recordEvent",
+      "description": "Mouse click interactions",
+      "screenshot": false
+    },
+    {
+      "name": "mousedown",
+      "enabled": false,
+      "handler": "recordEvent",
+      "description": "Mouse button press",
+      "screenshot": false
+    },
+    {
+      "name": "mouseup",
+      "enabled": false,
+      "handler": "recordEvent",
+      "description": "Mouse button release",
+      "screenshot": false
+    },
+    {
+      "name": "mouseover",
+      "enabled": false,
+      "handler": "recordEvent",
+      "description": "Pointer enters element",
+      "screenshot": false
+    },
+    {
+      "name": "mouseout",
+      "enabled": false,
+      "handler": "recordEvent",
+      "description": "Pointer leaves element",
+      "screenshot": false
+    },
+    {
+      "name": "keydown",
+      "enabled": false,
+      "handler": "recordEvent",
+      "description": "Key pressed down",
+      "screenshot": false
+    },
+    {
+      "name": "keyup",
+      "enabled": false,
+      "handler": "recordEvent",
+      "description": "Key released",
+      "screenshot": false
+    },
+    {
+      "name": "keypress",
+      "enabled": false,
+      "handler": "recordEvent",
+      "description": "Printable key pressed",
+      "screenshot": false
+    },
+    {
+      "name": "scroll",
+      "enabled": false,
+      "handler": "debouncedRecordScroll",
+      "description": "Page or element scrolling",
+      "screenshot": false
+    },
+    {
+      "name": "input",
+      "enabled": false,
+      "handler": "debouncedRecordInput",
+      "description": "Input value changes",
+      "screenshot": false
+    },
+    {
+      "name": "change",
+      "enabled": false,
+      "handler": "debouncedRecordInput",
+      "description": "Committed value change",
+      "screenshot": false
+    },
+    {
+      "name": "focus",
+      "enabled": false,
+      "handler": "recordEvent",
+      "description": "Element focus",
+      "screenshot": false
+    },
+    {
+      "name": "blur",
+      "enabled": false,
+      "handler": "recordEvent",
+      "description": "Element blur",
+      "screenshot": false
+    },
+    {
+      "name": "submit",
+      "enabled": false,
+      "handler": "recordEvent",
+      "description": "Form submission",
+      "screenshot": false
+    },
+    {
+      "name": "touchstart",
+      "enabled": false,
+      "handler": "recordEvent",
+      "description": "Touch start (mobile)",
+      "screenshot": false
+    },
+    {
+      "name": "touchend",
+      "enabled": false,
+      "handler": "recordEvent",
+      "description": "Touch end (mobile)",
+      "screenshot": false
+    },
+    {
+      "name": "touchmove",
+      "enabled": false,
+      "handler": "recordEvent",
+      "description": "Touch move (mobile)",
+      "screenshot": false
+    }
+  ],
+  "navigationEvents": [
+    {
+      "name": "popstate",
+      "enabled": false,
+      "description": "Browser back/forward",
+      "screenshot": false
+    },
+    {
+      "name": "pushState",
+      "enabled": false,
+      "description": "SPA route changes",
+      "screenshot": false
+    },
+    {
+      "name": "replaceState",
+      "enabled": false,
+      "description": "SPA history replacement",
+      "screenshot": false
+    },
+    {
+      "name": "beforeunload",
+      "enabled": false,
+      "description": "Page unload warning",
+      "screenshot": false
+    }
+  ],
+  "observers": {
+    "dynamicDom": false
+  }
+}

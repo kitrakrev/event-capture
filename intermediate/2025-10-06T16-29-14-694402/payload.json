@@ -1,0 +1,131 @@
+{
+  "task": "walmart task 1",
+  "duration": 10,
+  "events_recorded": 4,
+  "start_url": "https://www.walmart.com/ip/Mainstays-Ardent-5-Drawer-Dresser-White/5039495619?classType=VARIANT&athbdg=L1600",
+  "end_url": "https://www.walmart.com/pac?id=5039495619&ip=160&qt=1&g=FC&oId=7FF69058B2B13ABCA6F67087B74BB0AE&fahs=t&facp=t&faacc=f&fshs=f&fscp=f&fsacc=f&cat=4044&po=&csid=0",
+  "data": [
+    {
+      "timestamp": "2025-10-06T16:29:00.172Z",
+      "title": "Free Shipping! Mainstays Ardent 5 Drawer Dresser, White, Easy Assembly, Transitional Style, 47.75H x 27.75W x 16.5D - Walmart.com",
+      "type": "pageLoad",
+      "url": "https://www.walmart.com/ip/Mainstays-Ardent-5-Drawer-Dresser-White/5039495619?classType=VARIANT&athbdg=L1600"
+    },
+    {
+      "altKey": false,
+      "button": 0,
+      "buttons": 0,
+      "clientX": 1595,
+      "clientY": 439,
+      "ctrlKey": false,
+      "detail": 1,
+      "metaKey": false,
+      "movementX": 0,
+      "movementY": 0,
+      "offsetX": 59,
+      "offsetY": 13,
+      "pageX": 1595,
+      "pageY": 439,
+      "screenX": 3065,
+      "screenY": 551,
+      "shiftKey": false,
+      "target": {
+        "a11y": {
+          "id": "",
+          "name": "Add to cart",
+          "path": "div[Add to cart] > div[Add to cart] > button[Add to cart - Mainstays A...] > div[Add to cart] > span[Add to cart]",
+          "role": "",
+          "tagName": "span"
+        },
+        "attributes": {
+          "data-pcss-hide": "true",
+          "style": "visibility:visible"
+        },
+        "bid": "span-wwi0v8",
+        "boundingBox": {
+          "bottom": 446.015625,
+          "height": 20,
+          "left": 1536.578125,
+          "right": 1610.390625,
+          "top": 426.015625,
+          "width": 73.8125,
+          "x": 1536.578125,
+          "y": 426.015625
+        },
+        "class": "",
+        "cssPath": "div.w-100 > div > div.relative.w-100.dib.flex-row-reverse > button.w_hhLG.w_8nsR.w_lgOn.w_jDfj > div > span",
+        "id": "",
+        "isInteractive": false,
+        "tag": "SPAN",
+        "text": "Add to cart",
+        "xpath": "//*[@id=\"maincontent\"]/section[1]/main[1]/div[2]/div[2]/div[1]/div[3]/div[1]/div[1]/div[1]/div[1]/section[1]/div[1]/div[1]/div[1]/div[1]/div[1]/div[1]/div[1]/div[1]/button[1]/div[1]/span[1]"
+      },
+      "timestamp": 1759768143188,
+      "type": "click",
+      "url": "https://www.walmart.com/ip/Mainstays-Ardent-5-Drawer-Dresser-White/5039495619?classType=VARIANT&athbdg=L1600"
+    },
+    {
+      "altKey": false,
+      "button": 0,
+      "buttons": 0,
+      "clientX": 987,
+      "clientY": 676,
+      "ctrlKey": false,
+      "detail": 1,
+      "metaKey": false,
+      "movementX": 0,
+      "movementY": 0,
+      "offsetX": 45,
+      "offsetY": 24,
+      "pageX": 987,
+      "pageY": 676,
+      "screenX": 2457,
+      "screenY": 788,
+      "shiftKey": false,
+      "target": {
+        "a11y": {
+          "id": "",
+          "name": "No thanks",
+          "path": "div[Added to cartWalmart Prot...] > dialog[Added to cartWalmart Prot...] > div[No thanks3-Year Plan - $2...] > div[No thanks3-Year Plan - $2...] > button[No thanks]",
+          "role": "button",
+          "tagName": "button"
+        },
+        "attributes": {
+          "class": "w_hhLG w_DZvO w_lgOn w_jDfj f5",
+          "data-dca-id": "B:1EFA68376F",
+          "data-dca-intent": "__DCA_TBD__",
+          "type": "button"
+        },
+        "bid": "button-w-hhlg-w-dzvo-w-lgon-w-jdfj-f5-lcqjyx",
+        "boundingBox": {
+          "bottom": 692.546875,
+          "height": 40,
+          "left": 943.3125,
+          "right": 1056.25,
+          "top": 652.546875,
+          "width": 112.9375,
+          "x": 943.3125,
+          "y": 652.546875
+        },
+        "class": "w_hhLG w_DZvO w_lgOn w_jDfj f5",
+        "cssPath": "div.w_GwjJ:nth-of-type(2) > div.w_NeIN > div.w_MF2g.w_xFi3 > div.w_uTDk:nth-of-type(3) > div.flex > button.w_hhLG.w_DZvO.w_lgOn.w_jDfj.f5",
+        "id": "",
+        "isInteractive": true,
+        "tag": "BUTTON",
+        "text": "No thanks",
+        "value": "",
+        "xpath": "/html/body/div[3]/div[1]/div[2]/div[1]/div[1]/div[3]/div[1]/button[1]"
+      },
+      "timestamp": 1759768145743,
+      "type": "click",
+      "url": "https://www.walmart.com/ip/Mainstays-Ardent-5-Drawer-Dresser-White/5039495619?classType=VARIANT&athbdg=L1600"
+    },
+    {
+      "fromUserInput": false,
+      "timestamp": 1759768145963,
+      "title": "Free Shipping! Mainstays Ardent 5 Drawer Dresser, White, Easy Assembly, Transitional Style, 47.75H x 27.75W x 16.5D - Walmart.com",
+      "toUrl": "https://www.walmart.com/pac?id=5039495619&ip=160&qt=1&g=FC&oId=7FF69058B2B13ABCA6F67087B74BB0AE&fahs=t&facp=t&faacc=f&fshs=f&fscp=f&fsacc=f&cat=4044&po=&csid=0",
+      "type": "navigation"
+    }
+  ]
+}
