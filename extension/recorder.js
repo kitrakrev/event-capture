@@ -10,7 +10,6 @@
 // - Handles navigation and dynamic DOM changes where enabled by config.
 // - Streams events to the background via chrome.runtime messaging.
 
-// Hey there! This is our main event recorder script that captures user interactions on web pages
 // We wrap everything in an IIFE (Immediately Invoked Function Expression) 
 
 
