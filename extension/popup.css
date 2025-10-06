@@ -10,6 +10,19 @@ button {
   width: 100%;
 }
 
+label {
+  display: block;
+  margin-top: 10px;
+  font-weight: bold;
+}
+
+#taskDescription {
+  width: 100%;
+  padding: 6px;
+  margin-top: 6px;
+  box-sizing: border-box;
+}
+
 #results {
   margin-top: 15px;
   max-height: 300px;

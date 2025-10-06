@@ -6,10 +6,13 @@
 </head>
 <body>
   <h1>Task Recorder</h1>
-  <div id="taskDescription">Complete the task: Click on something</div>
+  <label for="taskDescription">Task:</label>
+  <input type="text" id="taskDescription" value="Complete the task: Click on something" />
   <!-- Timer will be inserted here by JavaScript -->
   <button id="startTask">Start Task</button>
   <button id="endTask" disabled>End Task</button>
+  <button id="pushToMongo" disabled>Push to MongoDB</button>
+  <script src="config.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

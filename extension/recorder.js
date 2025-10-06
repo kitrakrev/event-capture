@@ -77,6 +77,114 @@
     TOUCH_MOVE: 'touchmove'   // Mobile touch movement
   };
 
+  const DEFAULT_EVENT_CONFIG = {
+    domEvents: [
+      { name: 'click', enabled: true, handler: 'recordEvent' },
+      { name: 'mousedown', enabled: true, handler: 'recordEvent' },
+      { name: 'mouseup', enabled: true, handler: 'recordEvent' },
+      { name: 'mouseover', enabled: true, handler: 'recordEvent' },
+      { name: 'mouseout', enabled: true, handler: 'recordEvent' },
+      { name: 'keydown', enabled: true, handler: 'recordEvent' },
+      { name: 'keyup', enabled: true, handler: 'recordEvent' },
+      { name: 'keypress', enabled: true, handler: 'recordEvent' },
+      { name: 'scroll', enabled: true, handler: 'debouncedRecordScroll' },
+      { name: 'input', enabled: true, handler: 'debouncedRecordInput' },
+      { name: 'change', enabled: true, handler: 'debouncedRecordInput' },
+      { name: 'focus', enabled: true, handler: 'recordEvent' },
+      { name: 'blur', enabled: true, handler: 'recordEvent' },
+      { name: 'submit', enabled: true, handler: 'recordEvent' },
+      { name: 'touchstart', enabled: true, handler: 'recordEvent' },
+      { name: 'touchend', enabled: true, handler: 'recordEvent' },
+      { name: 'touchmove', enabled: true, handler: 'recordEvent' }
+    ],
+    navigationEvents: [
+      { name: 'popstate', enabled: true },
+      { name: 'pushState', enabled: true },
+      { name: 'replaceState', enabled: true },
+      { name: 'beforeunload', enabled: true }
+    ],
+    observers: {
+      dynamicDom: true
+    }
+  };
+
+  let cachedEventConfig = null;
+  const activeDomListeners = new Map();
+  const activeNavigationListeners = new Map();
+
+  function mergeEventConfig(userConfig) {
+    const configClone = JSON.parse(JSON.stringify(DEFAULT_EVENT_CONFIG));
+
+    if (!userConfig) {
+      return configClone;
+    }
+
+    if (Array.isArray(userConfig.domEvents)) {
+      const existingDom = new Map(configClone.domEvents.map(evt => [evt.name, evt]));
+      userConfig.domEvents.forEach(evt => {
+        if (!evt || !evt.name) {
+          return;
+        }
+        if (existingDom.has(evt.name)) {
+          Object.assign(existingDom.get(evt.name), evt);
+        } else {
+          configClone.domEvents.push(evt);
+        }
+      });
+    }
+
+    if (Array.isArray(userConfig.navigationEvents)) {
+      const existingNav = new Map(configClone.navigationEvents.map(evt => [evt.name, evt]));
+      userConfig.navigationEvents.forEach(evt => {
+        if (!evt || !evt.name) {
+          return;
+        }
+        if (existingNav.has(evt.name)) {
+          Object.assign(existingNav.get(evt.name), evt);
+        } else {
+          configClone.navigationEvents.push(evt);
+        }
+      });
+    }
+
+    if (userConfig.observers && typeof userConfig.observers.dynamicDom === 'boolean') {
+      configClone.observers.dynamicDom = userConfig.observers.dynamicDom;
+    }
+
+    return configClone;
+  }
+
+  async function loadEventConfig() {
+    if (cachedEventConfig) {
+      return cachedEventConfig;
+    }
+
+    try {
+      const configUrl = chrome.runtime.getURL('event-config.json');
+      const response = await fetch(configUrl, { cache: 'no-cache' });
+      if (!response.ok) {
+        throw new Error(`Failed to load event-config.json: ${response.status}`);
+      }
+      const userConfig = await response.json();
+      cachedEventConfig = mergeEventConfig(userConfig);
+    } catch (error) {
+      console.warn('Falling back to default event configuration.', error);
+      cachedEventConfig = mergeEventConfig(null);
+    }
+
+    return cachedEventConfig;
+  }
+
+  const debouncedRecordInput = debounce((e) => {
+    if (e.target.value !== lastEventData.lastInputValue) {
+      recordEvent(e);
+    }
+  }, 500);
+
+  const debouncedRecordScroll = debounce((e) => {
+    recordEvent(e);
+  }, 100);
+
   // Track click behavior to handle double-clicks and rapid clicks
   const clickState = {
     lastClickTime: 0,
@@ -547,14 +655,6 @@
     }
   }
 
-  // Update event listeners to use capture phase
-  document.addEventListener('click', recordEvent, true);
-  document.addEventListener('mousedown', recordEvent, true);
-  document.addEventListener('mouseup', recordEvent, true);
-  document.addEventListener('keydown', recordEvent, true);
-  document.addEventListener('input', recordEvent, true);
-  document.addEventListener('change', recordEvent, true);
-
   // Simple function to get accessibility identifiers for an element
   function getA11yIdentifiers(element) {
     if (!element) return {};
@@ -656,64 +756,97 @@
     }
   });
 
-  // Function to initialize recording (attach event listeners)
-  function initializeRecording() {
-    console.log("Initializing recording with event listeners");
-    
-    // Remove existing listeners first
-    const eventsToRemove = [
-      ['click', recordEvent],
-      ['mousedown', recordEvent],
-      ['mouseup', recordEvent],
-      ['mouseover', recordEvent],
-      ['mouseout', recordEvent],
-      ['keydown', recordEvent],
-      ['keyup', recordEvent],
-      ['keypress', recordEvent],
-      ['scroll', debouncedRecordScroll],
-      ['input', debouncedRecordInput],
-      ['focus', recordEvent],
-      ['blur', recordEvent],
-      ['change', debouncedRecordInput],
-      ['submit', recordEvent],
-      ['touchstart', recordEvent],
-      ['touchend', recordEvent],
-      ['touchmove', recordEvent]
-    ];
-
-    eventsToRemove.forEach(([event, handler]) => {
-      document.removeEventListener(event, handler, true);
-    });
-    
-    // Add event listeners with capture phase
-    eventsToRemove.forEach(([event, handler]) => {
-      document.addEventListener(event, handler, true);
-      console.log(`Added event listener for ${event}`);
-    });
-    
-    // Add navigation event listeners
-    window.addEventListener('popstate', handleNavigation);
-    window.addEventListener('pushState', handleNavigation);
-    window.addEventListener('replaceState', handleNavigation);
-    
-    // Set up observer for dynamic elements
-    dynamicObserver = observeDynamicChanges();
-
-    // Verify recording state
-    console.log("Recording initialized with state:", {
-      isRecording,
-      currentTaskId,
-      eventListeners: eventsToRemove.map(([event]) => event)
-    });
+  function getHandlerByKey(handlerKey) {
+    switch (handlerKey) {
+      case 'debouncedRecordInput':
+        return debouncedRecordInput;
+      case 'debouncedRecordScroll':
+        return debouncedRecordScroll;
+      case 'recordEvent':
+      default:
+        return recordEvent;
+    }
   }
 
-  // Create debounced version of recordInput with longer delay
-  const debouncedRecordInput = debounce((e) => {
-    // Only record input events if the value has actually changed
-    if (e.target.value !== lastEventData.lastInputValue) {
-      recordEvent(e);
+  function detachDomListeners() {
+    activeDomListeners.forEach((handler, eventName) => {
+      document.removeEventListener(eventName, handler, true);
+    });
+    activeDomListeners.clear();
+  }
+
+  function detachNavigationListeners() {
+    activeNavigationListeners.forEach(({ handler, options }, eventName) => {
+      window.removeEventListener(eventName, handler, options);
+    });
+    activeNavigationListeners.clear();
+  }
+
+  const NAVIGATION_HANDLER_MAP = {
+    popstate: handleNavigation,
+    pushState: handleNavigation,
+    replaceState: handleNavigation,
+    beforeunload: handleBeforeUnload
+  };
+
+  async function initializeRecording() {
+    console.log('Initializing recording with configurable listeners');
+
+    try {
+      const config = await loadEventConfig();
+
+      detachDomListeners();
+      detachNavigationListeners();
+
+      const enabledDomEvents = (config.domEvents || []).filter(evt => evt && evt.enabled !== false);
+      enabledDomEvents.forEach(({ name, handler }) => {
+        const resolvedHandler = getHandlerByKey(handler);
+        if (!resolvedHandler) {
+          console.warn(`No handler resolved for event '${name}' (key: ${handler}).`);
+          return;
+        }
+        document.addEventListener(name, resolvedHandler, true);
+        activeDomListeners.set(name, resolvedHandler);
+        console.log(`Added event listener for ${name}`);
+      });
+
+      const enabledNavigationEvents = (config.navigationEvents || []).filter(evt => evt && evt.enabled !== false);
+      enabledNavigationEvents.forEach(({ name }) => {
+        const handler = NAVIGATION_HANDLER_MAP[name];
+        if (!handler) {
+          console.warn(`No navigation handler mapped for ${name}`);
+          return;
+        }
+        const listenerOptions = name === 'beforeunload' ? false : true;
+        window.addEventListener(name, handler, listenerOptions);
+        activeNavigationListeners.set(name, { handler, options: listenerOptions });
+      });
+
+      if (config.observers && config.observers.dynamicDom === false) {
+        if (dynamicObserver) {
+          dynamicObserver.disconnect();
+          dynamicObserver = null;
+        }
+      } else {
+        if (dynamicObserver) {
+          dynamicObserver.disconnect();
+        }
+        dynamicObserver = observeDynamicChanges();
+      }
+
+      navigationState.lastUrl = window.location.href;
+      navigationState.lastTitle = document.title;
+
+      console.log('Recording initialized with state:', {
+        isRecording,
+        currentTaskId,
+        domEvents: enabledDomEvents.map(evt => evt.name),
+        navigationEvents: enabledNavigationEvents.map(evt => evt.name)
+      });
+    } catch (error) {
+      console.error('Failed to initialize recording configuration:', error);
     }
-  }, 500); // Increased to 500ms debounce
+  }
 
   // Listen for messages from popup
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -732,6 +865,7 @@
     console.log("Recording started for task:", taskId);
     isRecording = true;
     currentTaskId = taskId;
+    cachedEventConfig = null; // Reload configuration for each new recording session
     
     // Get existing events if any
     chrome.storage.local.get(['taskHistory'], (data) => {
@@ -767,30 +901,9 @@
     console.log("Recording stopped");
     isRecording = false;
     
-    // Remove event listeners
-    const eventsToRemove = [
-      ['click', recordEvent],
-      ['mousedown', recordEvent],
-      ['mouseup', recordEvent],
-      ['mouseover', recordEvent],
-      ['mouseout', recordEvent],
-      ['keydown', recordEvent],
-      ['keyup', recordEvent],
-      ['keypress', recordEvent],
-      ['scroll', debouncedRecordScroll],
-      ['input', debouncedRecordInput],
-      ['focus', recordEvent],
-      ['blur', recordEvent],
-      ['change', debouncedRecordInput],
-      ['submit', recordEvent],
-      ['touchstart', recordEvent],
-      ['touchend', recordEvent],
-      ['touchmove', recordEvent]
-    ];
-
-    eventsToRemove.forEach(([event, handler]) => {
-      document.removeEventListener(event, handler, true);
-    });
+    // Remove event listeners configured for this session
+    detachDomListeners();
+    detachNavigationListeners();
     
     // Disconnect observer
     if (dynamicObserver) {
@@ -853,11 +966,6 @@
     }
   }
 
-  // Add debounced scroll handler
-  const debouncedRecordScroll = debounce((e) => {
-    recordEvent(e);
-  }, 100);
-
   // Function to handle navigation events
   function handleNavigation(event) {
     if (!isRecording) return;
@@ -870,14 +978,12 @@
     }
   }
 
-  // Add beforeunload handler for navigation
-  window.addEventListener('beforeunload', function() {
+  function handleBeforeUnload() {
     if (!isRecording) return;
-    
+
     navigationState.pendingNavigation = true;
     const currentUrl = window.location.href;
-    
-    // Save current state
+
     try {
       localStorage.setItem('pendingNavigation', JSON.stringify({
         fromUrl: currentUrl,
@@ -885,9 +991,9 @@
         taskId: currentTaskId
       }));
     } catch (e) {
-      console.error("Error saving navigation state:", e);
+      console.error('Error saving navigation state:', e);
     }
-  });
+  }
 
   // Function to attempt recovery from errors
   function attemptRecovery() {

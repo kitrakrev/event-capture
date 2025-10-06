@@ -33,6 +33,23 @@ timerElement.style.textAlign = 'center';
 document.querySelector('h1').after(timerElement);
 
 let timerInterval;
+const mainPushButton = document.getElementById('pushToMongo');
+let lastCompletedTaskId = null;
+const taskDescriptionInput = document.getElementById('taskDescription');
+const TASK_TITLE_STORAGE_KEY = 'taskTitleDraft';
+
+if (taskDescriptionInput) {
+  chrome.storage.local.get([TASK_TITLE_STORAGE_KEY], (data) => {
+    const storedTitle = data[TASK_TITLE_STORAGE_KEY];
+    if (typeof storedTitle === 'string') {
+      taskDescriptionInput.value = storedTitle;
+    }
+  });
+
+  taskDescriptionInput.addEventListener('input', () => {
+    chrome.storage.local.set({ [TASK_TITLE_STORAGE_KEY]: taskDescriptionInput.value });
+  });
+}
 
 function startTimer(startTime) {
   const updateTimer = () => {
@@ -50,12 +67,71 @@ function startTimer(startTime) {
   timerInterval = setInterval(updateTimer, 1000);
 }
 
+async function pushTaskToMongo(taskData, buttonElement) {
+  if (!taskData || !Array.isArray(taskData.events) || taskData.events.length === 0) {
+    alert('No event data available to push.');
+    return;
+  }
+
+  if (taskDescriptionInput) {
+    const updatedTitle = taskDescriptionInput.value.trim() || 'Untitled Task';
+    taskData.title = updatedTitle;
+    taskData.task = updatedTitle;
+    taskDescriptionInput.value = updatedTitle;
+    chrome.storage.local.set({ [TASK_TITLE_STORAGE_KEY]: updatedTitle });
+  }
+
+  const payload = buildTaskPayload(taskData);
+
+  if (!payload) {
+    alert('Unable to build payload from task data.');
+    return;
+  }
+
+  try {
+    if (buttonElement) {
+      buttonElement.disabled = true;
+      buttonElement.textContent = 'Pushing...';
+    }
+
+    const result = await sendTaskPayload(payload);
+    try {
+      await savePayloadAndAssets(taskData, payload, { success: true, response: result });
+    } catch (archiveError) {
+      console.error('Failed to archive payload locally:', archiveError);
+    }
+
+    if (result.success) {
+      alert('Task data successfully pushed to MongoDB.');
+    } else {
+      alert('Task data sent. Server response: ' + JSON.stringify(result));
+    }
+  } catch (error) {
+    console.error('Error pushing to MongoDB:', error);
+    try {
+      await savePayloadAndAssets(taskData, payload, { success: false, error: error.message });
+    } catch (archiveError) {
+      console.error('Failed to archive payload after error:', archiveError);
+    }
+    alert('Error pushing to MongoDB: ' + error.message);
+  } finally {
+    if (buttonElement) {
+      buttonElement.disabled = false;
+      buttonElement.textContent = 'Push to MongoDB';
+    }
+  }
+}
+
 document.getElementById('startTask').addEventListener('click', async () => {
   try {
     // Disable start button, enable end button
     document.getElementById('startTask').disabled = true;
     document.getElementById('endTask').disabled = false;
-    
+    if (mainPushButton) {
+      mainPushButton.disabled = true;
+    }
+    lastCompletedTaskId = null;
+
     // Get active tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     
@@ -69,6 +145,11 @@ document.getElementById('startTask').addEventListener('click', async () => {
     // Generate a unique task ID
     const taskId = 'task_' + Date.now();
     const startTime = Date.now();
+    const taskTitle = taskDescriptionInput ? (taskDescriptionInput.value.trim() || 'Untitled Task') : 'Untitled Task';
+    if (taskDescriptionInput) {
+      taskDescriptionInput.value = taskTitle;
+      chrome.storage.local.set({ [TASK_TITLE_STORAGE_KEY]: taskTitle });
+    }
     
     // Initialize a new task record
     chrome.storage.local.get(['taskHistory'], function(data) {
@@ -81,7 +162,8 @@ document.getElementById('startTask').addEventListener('click', async () => {
         events: [],
         status: 'recording',
         startUrl: tab.url,
-        title: document.getElementById('taskDescription').textContent || 'Untitled Task'
+        title: taskTitle,
+        task: taskTitle
       };
       
       // Save the updated task history
@@ -135,7 +217,7 @@ document.getElementById('endTask').addEventListener('click', async () => {
         const taskHistory = data.taskHistory;
         taskHistory[taskId].status = 'completed';
         taskHistory[taskId].endTime = Date.now();
-        
+
         // Get the current tab to record the end URL
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         taskHistory[taskId].endUrl = tab.url;
@@ -148,11 +230,16 @@ document.getElementById('endTask').addEventListener('click', async () => {
           recordingTabId: null,
           currentTaskId: null
         });
-        
+
         console.log("Task completed:", taskId);
-        
+
         // Show task summary
         showTaskSummary(taskId, taskHistory[taskId]);
+
+        lastCompletedTaskId = taskId;
+        if (mainPushButton) {
+          mainPushButton.disabled = false;
+        }
       }
       
       if (data.recordingTabId) {
@@ -234,7 +321,7 @@ function showTaskSummary(taskId, taskData) {
     detailWindow.document.getElementById('eventData').textContent = 
       JSON.stringify(taskData.events, null, 2);
   });
-  
+
   resultsDiv.appendChild(viewButton);
 }
 
@@ -342,5 +429,39 @@ function addTaskHistoryButton() {
 
 // Call this function when the popup is loaded
 document.addEventListener('DOMContentLoaded', function() {
+  if (mainPushButton) {
+    mainPushButton.disabled = true;
+  }
   addTaskHistoryButton();
 });
+
+if (mainPushButton) {
+  mainPushButton.addEventListener('click', () => {
+    if (!lastCompletedTaskId) {
+      alert('Finish recording a task before pushing to MongoDB.');
+      return;
+    }
+
+    chrome.storage.local.get(['taskHistory'], (data) => {
+      const taskHistory = data.taskHistory || {};
+      const taskData = taskHistory[lastCompletedTaskId];
+
+      if (!taskData) {
+        alert('Task data not found. Please record a task again.');
+        return;
+      }
+
+      const updatedTitle = taskDescriptionInput ? (taskDescriptionInput.value.trim() || 'Untitled Task') : taskData.title;
+      taskData.title = updatedTitle;
+      taskData.task = updatedTitle;
+      if (taskDescriptionInput) {
+        taskDescriptionInput.value = updatedTitle;
+      }
+      taskHistory[lastCompletedTaskId] = taskData;
+
+      chrome.storage.local.set({ taskHistory, [TASK_TITLE_STORAGE_KEY]: updatedTitle }, () => {
+        pushTaskToMongo(taskData, mainPushButton);
+      });
+    });
+  });
+}
