@@ -4,6 +4,7 @@ This repository contains a Chrome extension that captures user events and a back
 
 ## Index
 - [Prerequisites](#prerequisites)
+- [Setup](#setup)
 - [Quick Start](#quick-start)
 - [Environment Variables](#environment-variables)
 - [Config (Central Driver)](#config-central-driver)
@@ -16,25 +17,41 @@ This repository contains a Chrome extension that captures user events and a back
 
 - MongoDB Atlas cluster and connection string
 - Chrome (for loading the extension)
-- Python 3.10+ for the FastAPI server
+- Python 3.10+
+- uv (fast Python package manager) — install via:
+  ```bash
+  python3 -m pip install --user uv
+  ```
+
+## Setup
+
+- Environment variables are already provided in this repo via `server/.env.example`.
+  - Just copy it to `server/.env` and you will have the current access configuration (my access).
+  - To view results in Mongo with the current defaults, see the "Where to find the data" link in the Output section.
+  - If you want your own access: the current setup does not use an API key and points to my Atlas admin URI. Replace the following in `server/.env` with your values:
+    - `ATLAS_URI` (your MongoDB connection string)
+    - optionally `ALLOWED_DB` and `EVENT_COLLECTION`
+    - if you set `API_KEY`, also set the same value in `extension/config.js` (`API_KEY` constant)
+  - You can always view the output locally under `<project-root>/intermediate/<ISO-timestamp>/`.
 
 ## Quick Start
 
-Copy/paste these commands in a terminal from this folder:
+Run everything from the project root (this folder):
 
 ```bash
-# 1) Install Poetry (if you don't have it)
-curl -sSL https://install.python-poetry.org | python3 -
+# 1) Install uv (if you don't have it)
+python3 -m pip install --user uv
 
-# 2) Install project dependencies (inside server/)
-(cd server && poetry install)
+# 2) Create a virtual environment and install server dependencies
+uv venv server/.venv
+uv pip install -r server/requirements.txt --python server/.venv/bin/python
 
-# 3) Copy env template and edit credentials
+# 3) Copy env template and edit credentials (env is already in repo)
 cp server/.env.example server/.env
 # Open server/.env and set ATLAS_URI, API_KEY (optional), etc.
 
-# 4) Start the API server on port 3000 (from server/)
-(cd server && poetry run uvicorn server:app --host 0.0.0.0 --port 3000 --reload)
+# 4) Start the API server on port 3000 (still from project root)
+server/.venv/bin/python -m uvicorn server.server:app --host 0.0.0.0 --port 3000 --reload
 ```
 
 Then load the Chrome extension:
@@ -176,7 +193,12 @@ Adding a new event type:
 ## Output
 
 Where to find the data:
-- MongoDB: Database = value of `ALLOWED_DB`; Collection = value of `EVENT_COLLECTION` (see `server/.env`).
+- MongoDB (current defaults in this repo):
+  - Database: `capstone`
+  - Collection: `events`
+  - Copy/paste Connection (MongoDB Compass/Driver):
+    `mongodb+srv://sid:REDACTED@capstone.xydgfjo.mongodb.net/capstone?retryWrites=true&w=majority&appName=capstone`
+  - If you change `ALLOWED_DB` or `EVENT_COLLECTION` in `server/.env`, open that DB/collection accordingly.
 - Local disk: `<project-root>/intermediate/<ISO-timestamp>/payload.json` and `metadata.json`.
 
 Sample MongoDB document (click to expand):
