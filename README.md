@@ -2,6 +2,16 @@
 
 This repository contains a Chrome extension that captures user events and a backend API (FastAPI + PyMongo) that writes those events to MongoDB Atlas.
 
+## Components at a Glance
+
+- ENV (connection and access): `server/.env`
+  - Set your Mongo connection (`ATLAS_URI`) and access targets (`ALLOWED_DB`, `EVENT_COLLECTION`).
+  - Optional: `API_KEY` to require an API key (if you set this, also set it in `extension/config.js`).
+- Config (what to record): `extension/event-config.json`
+  - Define which browser events are captured (`name`), whether they are enabled (`enabled`), and which handler to use (`handler`).
+
+These two files are the only drivers; everything else reads from them.
+
 ## Index
 - [Prerequisites](#prerequisites)
 - [Setup](#setup)
@@ -9,6 +19,7 @@ This repository contains a Chrome extension that captures user events and a back
 - [Environment Variables](#environment-variables)
 - [Config (Central Driver)](#config-central-driver)
 - [API](#api)
+- [How it works](#how-it-works)
 - [Output](#output)
 - [Storage](#storage)
 - [Notes](#notes)
@@ -59,7 +70,7 @@ Then load the Chrome extension:
 - Select the `extension/` directory (the folder containing `manifest.json`)
 - The extension will POST to `http://localhost:3000/api/events` by default
 
-If you use MongoDB Atlas: create a free cluster, click the "Connect" button, and copy the connection string (Mongo URI). Replace it in `server/.env` as `ATLAS_URI`.
+> Credentials: See Setup for using the defaults or replacing with your own.
 
 ---
 
@@ -187,6 +198,16 @@ Adding a new event type:
     ```json
     { "success": true, "documentId": "<mongo-id>" }
     ```
+
+---
+
+## How it works
+
+Chrome Extension → FastAPI → MongoDB
+
+- Chrome extension (popup + content script) captures user actions based on `extension/event-config.json` and builds a payload.
+- FastAPI (`server/server.py`) accepts POST `/api/events`, inserts into MongoDB, and writes a local snapshot under `intermediate/<timestamp>/`.
+- You can view results immediately on disk, or in Mongo using the connection from your `server/.env`.
 
 ---
 
