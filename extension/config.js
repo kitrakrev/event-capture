@@ -1,3 +1,15 @@
+// Client-side API helpers for the Chrome extension.
+//
+// Purpose: Build the task payload and send it to the backend API. Optionally
+// supports local downloads (now disabled by default since archiving happens
+// on the server).
+//
+// What it does:
+// - buildTaskPayload(taskData): normalize task data from storage/UI.
+// - sendTaskPayload(payload): POST to the API endpoint with optional x-api-key.
+// - savePayloadAndAssets(): currently a no-op (archiving done by server).
+// - Utility helpers for downloads remain for potential future use.
+
 // Shared configuration and helpers for communicating with the backend API.
 // Update these constants to match your deployment.
 const API_ENDPOINT = 'http://localhost:3000/api/events';

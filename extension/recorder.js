@@ -1,3 +1,15 @@
+// Content script that captures user interactions on the active page.
+//
+// Purpose: Attach configurable DOM and navigation listeners to capture
+// meaningful user interactions (e.g., clicks, inputs, navigations) and send
+// normalized event objects to the background script for persistence.
+//
+// What it does:
+// - Loads `event-config.json` to decide which listeners to attach.
+// - Records events with stable element identifiers (CSS, XPath, semantics).
+// - Handles navigation and dynamic DOM changes where enabled by config.
+// - Streams events to the background via chrome.runtime messaging.
+
 // Hey there! This is our main event recorder script that captures user interactions on web pages
 // We wrap everything in an IIFE (Immediately Invoked Function Expression) 
 

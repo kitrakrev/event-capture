@@ -1,4 +1,9 @@
-"""FastAPI service providing a secure MongoDB API facade and event ingestion."""
+"""FastAPI service providing a secure MongoDB API facade and event ingestion.
+
+This service exposes a minimal API to ingest recorded browser events into
+MongoDB and optionally mirror the submitted payload to disk under
+<project-root>/intermediate/<ISO-timestamp>.
+"""
 
 from __future__ import annotations
 
@@ -52,14 +57,17 @@ app = FastAPI(title="Atlas Data API Replacement", version="1.0.0")
 
 
 def require_configuration() -> None:
+    """Fail fast when required environment variables are missing."""
     if not ATLAS_URI:
         raise RuntimeError("ATLAS_URI environment variable is required")
     if not ALLOWED_DB:
         raise RuntimeError("ALLOWED_DB environment variable is required")
     if not ALLOWED_COLLECTIONS:
         raise RuntimeError("ALLOWED_COLLECTIONS environment variable is required")
+
+
 def to_serializable(value: Any) -> Any:
-    """Recursively convert Mongo types (e.g. ObjectId) into JSON-friendly data."""
+    """Recursively convert Mongo/Datetime types into JSON-friendly values."""
     if isinstance(value, ObjectId):
         return str(value)
     if isinstance(value, datetime):
@@ -72,6 +80,7 @@ def to_serializable(value: Any) -> Any:
 
 
 def get_collection(database: str, collection: str):
+    """Return a guarded MongoDB collection from the allow-listed db/collection."""
     if database != ALLOWED_DB:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="blocked database")
     if collection not in ALLOWED_COLLECTIONS:
@@ -82,12 +91,14 @@ def get_collection(database: str, collection: str):
 
 
 async def verify_api_key(x_api_key: Optional[str] = Header(default=None)) -> None:
+    """Optional API key check controlled by the API_KEY env var."""
     if API_KEY and x_api_key != API_KEY:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
 
 
 @app.on_event("startup")
 async def startup_event() -> None:
+    """Verify configuration and Mongo connectivity on startup."""
     require_configuration()
     if client is None:
         raise RuntimeError("Mongo client not initialized")
@@ -95,6 +106,7 @@ async def startup_event() -> None:
 
 
 class EventPayload(BaseModel):
+    """Schema for event ingestion payload from the extension."""
     task: str
     duration: int = Field(..., ge=0)
     events_recorded: int = Field(..., ge=0)
@@ -105,6 +117,7 @@ class EventPayload(BaseModel):
 
 @app.post("/api/events", dependencies=[Depends(verify_api_key)])
 async def ingest_events(payload: EventPayload) -> Dict[str, Any]:
+    """Insert the payload into Mongo and mirror it to intermediate/<timestamp>."""
     try:
         collection = get_collection(ALLOWED_DB, EVENT_COLLECTION)
         events_count = len(payload.data)
@@ -156,6 +169,7 @@ async def ingest_events(payload: EventPayload) -> Dict[str, Any]:
 
 
 class FindOneBody(BaseModel):
+    """Request body for a restricted findOne call."""
     database: str
     collection: str
     filter: Dict[str, Any] = Field(default_factory=dict)
@@ -164,6 +178,7 @@ class FindOneBody(BaseModel):
 
 @app.post("/v1/findOne", dependencies=[Depends(verify_api_key)])
 async def find_one(body: FindOneBody) -> Dict[str, Any]:
+    """Find a single document in an allowed collection."""
     try:
         doc = get_collection(body.database, body.collection).find_one(body.filter, body.projection)
         return {"document": to_serializable(doc)}
@@ -172,6 +187,7 @@ async def find_one(body: FindOneBody) -> Dict[str, Any]:
 
 
 class FindBody(BaseModel):
+    """Request body for a restricted find (with sort/skip/limit)."""
     database: str
     collection: str
     filter: Dict[str, Any] = Field(default_factory=dict)
@@ -193,6 +209,7 @@ class FindBody(BaseModel):
 
 @app.post("/v1/find", dependencies=[Depends(verify_api_key)])
 async def find(body: FindBody) -> Dict[str, Any]:
+    """Find documents in an allowed collection with optional sort/pagination."""
     try:
         cursor = get_collection(body.database, body.collection).find(body.filter, body.projection)
         if body.sort:
@@ -206,6 +223,7 @@ async def find(body: FindBody) -> Dict[str, Any]:
 
 
 class InsertOneBody(BaseModel):
+    """Request body for a restricted insertOne call."""
     database: str
     collection: str
     document: Dict[str, Any]
@@ -213,6 +231,7 @@ class InsertOneBody(BaseModel):
 
 @app.post("/v1/insertOne", dependencies=[Depends(verify_api_key)])
 async def insert_one(body: InsertOneBody) -> Dict[str, Any]:
+    """Insert a document into an allowed collection."""
     try:
         result = get_collection(body.database, body.collection).insert_one(body.document)
         return {"insertedId": str(result.inserted_id)}
@@ -221,6 +240,7 @@ async def insert_one(body: InsertOneBody) -> Dict[str, Any]:
 
 
 class UpdateOneBody(BaseModel):
+    """Request body for a restricted updateOne call."""
     database: str
     collection: str
     filter: Dict[str, Any]
@@ -230,6 +250,7 @@ class UpdateOneBody(BaseModel):
 
 @app.post("/v1/updateOne", dependencies=[Depends(verify_api_key)])
 async def update_one(body: UpdateOneBody) -> Dict[str, Any]:
+    """Update a single document in an allowed collection."""
     try:
         result = get_collection(body.database, body.collection).update_one(
             body.filter, body.update, upsert=body.upsert
@@ -247,6 +268,7 @@ async def update_one(body: UpdateOneBody) -> Dict[str, Any]:
 
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
+    """Attach basic security headers to all responses."""
     response = await call_next(request)
     response.headers["Cache-Control"] = "no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"

@@ -1,3 +1,14 @@
+// Background service worker for the Chrome extension.
+//
+// Purpose: Coordinate recording across tabs, inject the content script after
+// navigations, and persist events sent by the recorder into chrome.storage.
+//
+// What it does:
+// - On tab updates: injects `recorder.js` when the recording tab navigates.
+// - On messages from `recorder.js`: appends events to the active task history.
+// - Handles UI actions: open detailed view, export a task to JSON, delete a task.
+// - Records high-level events (navigation, new tab) while recording is active.
+
 // Track navigation events
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete') {

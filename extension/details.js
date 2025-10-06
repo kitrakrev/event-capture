@@ -1,3 +1,15 @@
+// Details window script for viewing a task's recorded events.
+//
+// Purpose: Render a human-readable view of a single task's events with basic
+// filtering and sorting. Offers a button to push the raw events to a legacy
+// backend (kept for reference; main flow uses the unified API).
+//
+// What it does:
+// - Reads the taskId from the query string.
+// - Loads the task from chrome.storage.local and renders events.
+// - Provides simple filter (by type) and sort (by timestamp/type).
+// - Includes a push button to POST events to a demonstrated endpoint.
+
 // Parse taskId from URL
 const urlParams = new URLSearchParams(window.location.search);
 const taskId = urlParams.get('taskId');

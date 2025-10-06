@@ -1,14 +1,22 @@
 # Event Capture Service
 
-This repository contains the Chrome extension for capturing user events and a backend API that writes those events to MongoDB Atlas. You can run the backend with either Node/Express or FastAPI/PyMongo.
+This repository contains a Chrome extension that captures user events and a backend API (FastAPI + PyMongo) that writes those events to MongoDB Atlas.
+
+## Index
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Environment Variables](#environment-variables)
+- [Config (Central Driver)](#config-central-driver)
+- [API](#api)
+- [Output](#output)
+- [Storage](#storage)
+- [Notes](#notes)
 
 ## Prerequisites
 
 - MongoDB Atlas cluster and connection string
 - Chrome (for loading the extension)
-- Optional runtimes depending on the backend you choose:
-  - Node.js 18+ for the Express server
-  - Python 3.10+ for the FastAPI server
+- Python 3.10+ for the FastAPI server
 
 ## Quick Start
 
@@ -40,7 +48,13 @@ If you use MongoDB Atlas: create a free cluster, click the "Connect" button, and
 
 ## Environment Variables
 
-Create `server/.env` (copied from `server/.env.example`). Example:
+A template is already provided. Just copy it and edit your values:
+
+```bash
+cp server/.env.example server/.env
+```
+
+Example values inside `.env`:
 
 ```env
 ATLAS_URI="mongodb+srv://<username>:<password>@<cluster-host>/?retryWrites=true&w=majority"
@@ -58,42 +72,62 @@ API_KEY="replace-with-strong-secret"
 
 ---
 
-## Example event-config
+## Config (Central Driver)
 
-Save as `extension/event-config.json` to control which DOM events are captured by the content script.
+The central configuration for what gets recorded is `extension/event-config.json` (already present). This file drives which events are captured by the content script.
+
+- It is the single source of truth for enabling/disabling categories of events.
+- Each entry defines the browser event name, whether it is enabled, and which handler to use.
+- Some entries may include a `screenshot` flag (historically used; currently screenshots are disabled in code).
+
+Fields:
+- `name`: The DOM or navigation event name (e.g., `click`, `input`, `popstate`).
+- `enabled`: `true` to attach a listener and record the event; `false` to skip.
+- `handler`: Which function the recorder will attach for this event (`recordEvent`, `debouncedRecordInput`, `debouncedRecordScroll`).
+- `screenshot` (legacy): Whether a screenshot was intended at the time of this event (not active now).
+
+Details (click to expand):
+<details>
+<summary>Example: domEvents and navigationEvents</summary>
 
 ```json
 {
   "domEvents": [
-    { "name": "click", "enabled": true, "handler": "recordEvent" },
-    { "name": "mousedown", "enabled": false, "handler": "recordEvent" },
-    { "name": "mouseup", "enabled": false, "handler": "recordEvent" },
-    { "name": "mouseover", "enabled": false, "handler": "recordEvent" },
-    { "name": "mouseout", "enabled": false, "handler": "recordEvent" },
-    { "name": "keydown", "enabled": false, "handler": "recordEvent" },
-    { "name": "keyup", "enabled": false, "handler": "recordEvent" },
-    { "name": "keypress", "enabled": false, "handler": "recordEvent" },
-    { "name": "scroll", "enabled": false, "handler": "debouncedRecordScroll" },
+    { "name": "click", "enabled": true,  "handler": "recordEvent" },
     { "name": "input", "enabled": false, "handler": "debouncedRecordInput" },
-    { "name": "change", "enabled": false, "handler": "debouncedRecordInput" },
-    { "name": "focus", "enabled": false, "handler": "recordEvent" },
-    { "name": "blur", "enabled": false, "handler": "recordEvent" },
-    { "name": "submit", "enabled": false, "handler": "recordEvent" },
-    { "name": "touchstart", "enabled": false, "handler": "recordEvent" },
-    { "name": "touchend", "enabled": false, "handler": "recordEvent" },
-    { "name": "touchmove", "enabled": false, "handler": "recordEvent" }
+    { "name": "scroll", "enabled": false, "handler": "debouncedRecordScroll" }
   ],
   "navigationEvents": [
-    { "name": "popstate", "enabled": false },
-    { "name": "pushState", "enabled": false },
+    { "name": "popstate",     "enabled": false },
+    { "name": "pushState",    "enabled": false },
     { "name": "replaceState", "enabled": false },
     { "name": "beforeunload", "enabled": false }
   ],
   "observers": { "dynamicDom": false }
 }
 ```
+</details>
 
-Note: Currently, a `pageLoad` event and background events like `navigation` / `newTab` may be recorded irrespective of DOM listeners. If you want only `click` events, we can gate those by config as well.
+Event meanings and examples:
+
+| Event name   | What it captures                               | Example
+|--------------|--------------------------------------------------|--------
+| click        | User clicks (button, link, interactive element) | Click on `#submit` button
+| input        | Input text changes (debounced)                   | Typing in `#search` field
+| change       | Committed value changes                          | Selecting from a `<select>`
+| scroll       | Significant scrolls (debounced)                  | Scrolling page 200px
+| keydown/up   | Keyboard presses/releases                        | Pressing `Enter`
+| mouseover/out| Pointer enter/leave (interactive/tooltip)        | Hover over menu item
+| submit       | Form submissions                                 | Submitting login form
+| navigation   | Page navigations                                 | `/home` → `/profile`
+| pageLoad     | Initial page load                                | Page title and URL
+| focus/blur   | Focus gained/lost                                | Focusing an input
+| touch*       | Mobile touch interactions                        | `touchstart` on element
+
+Adding a new event type:
+1. Add an entry in `extension/event-config.json` (set `enabled: true` and choose a `handler`).
+2. If it needs special handling, add logic in `extension/recorder.js` (e.g., extend `recordEvent` or add a new handler and map it in `getHandlerByKey`).
+3. Optionally add a summary row to the table above in this README.
 
 ---
 
@@ -101,7 +135,7 @@ Note: Currently, a `pageLoad` event and background events like `navigation` / `n
 
 - POST `/api/events`
   - Headers: `Content-Type: application/json`, `x-api-key: <API_KEY>` (if configured)
-  - Body:
+  - Body (matches the Chrome extension payload shape):
     ```json
     {
       "task": "My Task Title",
@@ -136,6 +170,66 @@ Note: Currently, a `pageLoad` event and background events like `navigation` / `n
     ```json
     { "success": true, "documentId": "<mongo-id>" }
     ```
+
+---
+
+## Output
+
+Where to find the data:
+- MongoDB: Database = value of `ALLOWED_DB`; Collection = value of `EVENT_COLLECTION` (see `server/.env`).
+- Local disk: `<project-root>/intermediate/<ISO-timestamp>/payload.json` and `metadata.json`.
+
+Sample MongoDB document (click to expand):
+<details>
+<summary>Show sample document</summary>
+
+```json
+{
+  "task": "Search and submit",
+  "duration": 42,
+  "events_recorded": 3,
+  "start_url": "https://example.com",
+  "end_url": "https://example.com/results",
+  "data": [
+    {
+      "type": "pageLoad",
+      "timestamp": "2025-10-06T16:28:10.123Z",
+      "url": "https://example.com",
+      "title": "Home"
+    },
+    {
+      "type": "click",
+      "timestamp": 1728213140000,
+      "url": "https://example.com",
+      "target": {
+        "tag": "BUTTON",
+        "id": "submit",
+        "class": "btn primary",
+        "text": "Submit",
+        "value": "",
+        "isInteractive": true,
+        "xpath": "//*[@id=\"submit\"]",
+        "cssPath": "button#submit.btn.primary",
+        "bid": "button-primary-abc123",
+        "a11y": { "role": "button", "name": "Submit" },
+        "attributes": { "id": "submit", "class": "btn primary" },
+        "boundingBox": { "x": 10, "y": 20, "width": 100, "height": 30 }
+      }
+    },
+    {
+      "type": "navigation",
+      "timestamp": "2025-10-06T16:28:20.456Z",
+      "fromUrl": "https://example.com",
+      "toUrl": "https://example.com/results",
+      "title": "Results",
+      "referrer": "https://example.com",
+      "fromUserInput": true
+    }
+  ],
+  "timestamp": "2025-10-06T16:29:14.694Z"
+}
+```
+</details>
 
 ---
 

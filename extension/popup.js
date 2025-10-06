@@ -1,3 +1,14 @@
+// Popup UI controller for the extension.
+//
+// Purpose: Provide a simple UI to start/stop recording on the active tab,
+// show a summary, and send the recorded task to the backend API.
+//
+// What it does:
+// - Manages the recording lifecycle (start/stop) and persists state.
+// - Injects `recorder.js` into the active tab when recording starts.
+// - Builds a payload and calls the API helpers from `config.js`.
+// - Offers quick access to view history and export/delete tasks.
+
 // Add this function to check storage
 function checkStorage() {
   chrome.storage.local.get(null, function(data) {
