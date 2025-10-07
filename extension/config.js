@@ -72,6 +72,23 @@ async function sendTaskPayload(payload, extraHeaders = {}) {
   return result;
 }
 
+async function uploadRecordedVideo(folderIso, blob) {
+  const form = new FormData();
+  form.append('folderIso', folderIso);
+  form.append('file', new File([blob], 'video.webm', { type: 'video/webm' }));
+
+  const headers = {};
+  if (API_KEY) headers['x-api-key'] = API_KEY;
+
+  const base = API_ENDPOINT.replace('/api/events', '');
+  const resp = await fetch(`${base}/api/events/video`, { method: 'POST', body: form, headers });
+  if (!resp.ok) {
+    const tx = await resp.text().catch(() => '');
+    throw new Error(tx || `Upload failed ${resp.status}`);
+  }
+  return await resp.json().catch(() => ({}));
+}
+
 function canArchiveLocally() {
   return typeof chrome !== 'undefined' && chrome.downloads && typeof chrome.downloads.download === 'function';
 }
