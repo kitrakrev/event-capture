@@ -625,10 +625,7 @@
     }
 
     // Send event to background script
-    chrome.runtime.sendMessage({
-      type: 'recordedEvent',
-      event: eventData
-    });
+    chrome.runtime.sendMessage({ type: 'recordedEvent', event: eventData });
 
     // Also store locally for verification
     events.push(eventData);
@@ -899,7 +896,7 @@
       // Record initial page load as an event
       const pageLoadEvent = {
         type: EVENT_TYPES.PAGE_LOAD,
-        timestamp: formatTimestamp(Date.now()),
+        timestamp: Date.now(),
         url: window.location.href,
         title: document.title
       };

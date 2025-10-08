@@ -14,7 +14,8 @@
     "scripting",
     "storage",
     "tabs",
-    "downloads"
+    "downloads",
+    "offscreen"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -28,7 +29,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["event-config.json"],
+      "resources": ["event-config.json", "offscreen.html", "offscreen.js"],
       "matches": ["<all_urls>"]
     }
   ],

@@ -100,12 +100,30 @@ async function pushTaskToMongo(taskData, buttonElement) {
   }
 
   try {
+    // Attach local video path if available
+    try {
+      const store = await chrome.storage.local.get(['videoStartedAtMs']);
+      const iso = store?.videoStartedAtMs ? new Date(store.videoStartedAtMs).toISOString().replace(/[:.]/g, '-') : null;
+      if (iso) {
+        payload.video_local_path = `Downloads/event-capture-archives/${iso}/video.webm`;
+      }
+    } catch (err) {
+      console.error('Error retrieving videoStartedAtMs from storage:', err);
+    }
     if (buttonElement) {
       buttonElement.disabled = true;
       buttonElement.textContent = 'Pushing...';
     }
 
     const result = await sendTaskPayload(payload);
+    try {
+      // Notify background so it can upload pending video with folderIso
+      if (result && result.folderIso) {
+        await chrome.runtime.sendMessage({ type: 'INGEST_DONE', folderIso: result.folderIso });
+      }
+    } catch (messageError) {
+      console.error('Failed to notify background of INGEST_DONE:', messageError);
+    }
     try {
       await savePayloadAndAssets(taskData, payload, { success: true, response: result });
     } catch (archiveError) {
@@ -150,6 +168,8 @@ document.getElementById('startTask').addEventListener('click', async () => {
     if (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://') || tab.url.startsWith('brave://')) {
       console.error("Cannot inject scripts into browser pages. Please navigate to a website first.");
       alert("Cannot record on browser pages. Please navigate to a website first.");
+      document.getElementById('startTask').disabled = false;
+      document.getElementById('endTask').disabled = true;
       return;
     }
     
@@ -163,7 +183,7 @@ document.getElementById('startTask').addEventListener('click', async () => {
     }
     
     // Initialize a new task record
-    chrome.storage.local.get(['taskHistory'], function(data) {
+    await new Promise((resolve) => chrome.storage.local.get(['taskHistory'], function(data) {
       const taskHistory = data.taskHistory || {};
       
       // Create a new task entry
@@ -186,12 +206,46 @@ document.getElementById('startTask').addEventListener('click', async () => {
         recordingTabId: tab.id
       }, function() {
         console.log("New task started:", taskId);
+        resolve();
       });
-    });
+    }));
     
     // Start timer
     startTimer(startTime);
     
+    // Start screen recording and wait for it to initialize AFTER timer begins
+    try {
+      const videoResult = await chrome.runtime.sendMessage({ type: 'POPUP_START_VIDEO' });
+      if (!videoResult || !videoResult.ok) {
+        throw new Error('Screen recording failed to start');
+      }
+      // Wait for videoStartedAtMs to be persisted
+      await new Promise(resolve => setTimeout(resolve, 300));
+    } catch (e) {
+      console.error('Failed to start video:', e);
+      alert('Screen recording failed. Please try again.');
+      // Roll back recording state
+      await new Promise((resolve) => chrome.storage.local.get(['taskHistory'], (data) => {
+        const taskHistory = data.taskHistory || {};
+        if (taskHistory[taskId]) {
+          taskHistory[taskId].status = 'cancelled';
+        }
+        chrome.storage.local.set({
+          taskHistory,
+          isRecording: false,
+          recordingStartTime: null,
+          currentTaskId: null,
+          recordingTabId: null
+        }, resolve);
+      }));
+      // Reset UI
+      document.getElementById('startTask').disabled = false;
+      document.getElementById('endTask').disabled = true;
+      if (timerInterval) clearInterval(timerInterval);
+      timerElement.textContent = '';
+      return;
+    }
+
     // Inject content script to record user actions
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
@@ -239,7 +293,8 @@ document.getElementById('endTask').addEventListener('click', async () => {
           isRecording: false,
           recordingStartTime: null,
           recordingTabId: null,
-          currentTaskId: null
+          currentTaskId: null,
+          lastCompletedTaskId: taskId
         });
 
         console.log("Task completed:", taskId);
@@ -260,6 +315,13 @@ document.getElementById('endTask').addEventListener('click', async () => {
         } catch (e) {
           console.error("Error sending stop message:", e);
         }
+      }
+
+      // Stop screen recording
+      try {
+        await chrome.runtime.sendMessage({ type: 'POPUP_STOP_VIDEO' });
+      } catch (e) {
+        console.error('Failed to stop video:', e);
       }
     });
   } catch (error) {

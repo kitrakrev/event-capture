@@ -72,10 +72,21 @@ document.addEventListener('DOMContentLoaded', function() {
         filtered = filtered.slice().sort((a, b) => a.timestamp - b.timestamp);
       }
       document.getElementById('eventCount').textContent = `Total Events: ${filtered.length}`;
-      document.getElementById('eventData').textContent = filtered.map(event => {
-        const timestamp = new Date(event.timestamp).toLocaleString();
-        return `[${timestamp}] ${event.type}\n${JSON.stringify(event.target, null, 2)}\n`;
-      }).join('\n');
+      // Show full JSON with video paths and per-event timestamps
+      const full = {
+        id: task.id,
+        title: task.title,
+        startUrl: task.startUrl,
+        endUrl: task.endUrl,
+        durationSeconds: Math.floor(((task.endTime||0) - (task.startTime||0)) / 1000),
+        video_local_path: task.video_local_path || null,
+        video_server_path: task.video_server_path || null,
+        events: filtered.map(e => ({
+          ...e,
+          video_timestamp: typeof e.video_timestamp === 'number' ? e.video_timestamp : (typeof e.videoTimeMs === 'number' ? e.videoTimeMs : null)
+        }))
+      };
+      document.getElementById('eventData').textContent = JSON.stringify(full, null, 2);
     }
 
     filter.addEventListener('change', function(e) {
