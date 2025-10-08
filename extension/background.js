@@ -144,7 +144,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                       startUrl: task.startUrl || null,
                       endUrl: task.endUrl || null,
                       durationSeconds,
-                      video_local_path: (data2.taskHistory[taskId] && data2.taskHistory[taskId].video_local_path) || `/Users/karthikraja/Downloads/${filename}`,
+                      video_local_path: (data2.taskHistory[taskId] && data2.taskHistory[taskId].video_local_path) || filename,
                       video_server_path: task.video_server_path || null,
                       events: Array.isArray(task.events) ? task.events.map(e => ({
                         ...e,
