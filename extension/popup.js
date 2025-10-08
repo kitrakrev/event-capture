@@ -121,7 +121,9 @@ async function pushTaskToMongo(taskData, buttonElement) {
       if (result && result.folderIso) {
         await chrome.runtime.sendMessage({ type: 'INGEST_DONE', folderIso: result.folderIso });
       }
-    } catch {}
+    } catch (messageError) {
+      console.error('Failed to notify background of INGEST_DONE:', messageError);
+    }
     try {
       await savePayloadAndAssets(taskData, payload, { success: true, response: result });
     } catch (archiveError) {
