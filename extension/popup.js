@@ -107,7 +107,9 @@ async function pushTaskToMongo(taskData, buttonElement) {
       if (iso) {
         payload.video_local_path = `Downloads/event-capture-archives/${iso}/video.webm`;
       }
-    } catch {}
+    } catch (err) {
+      console.error('Error retrieving videoStartedAtMs from storage:', err);
+    }
     if (buttonElement) {
       buttonElement.disabled = true;
       buttonElement.textContent = 'Pushing...';
