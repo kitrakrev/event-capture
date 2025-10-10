@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status, UploadFile, File, Form
 from pydantic import BaseModel, Field, validator
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
@@ -112,6 +112,8 @@ class EventPayload(BaseModel):
     start_url: Optional[str] = None
     end_url: Optional[str] = None
     data: List[Dict[str, Any]] = Field(default_factory=list)
+    video_local_path: Optional[str] = None
+    video_server_path: Optional[str] = None
 
 
 @app.post("/api/events", dependencies=[Depends(verify_api_key)])
@@ -127,6 +129,8 @@ async def ingest_events(payload: EventPayload) -> Dict[str, Any]:
             "start_url": payload.start_url,
             "end_url": payload.end_url,
             "data": payload.data,
+            "video_local_path": payload.video_local_path,
+            "video_server_path": payload.video_server_path,
             "timestamp": datetime.utcnow(),
         }
         result = collection.insert_one(document)
@@ -145,6 +149,8 @@ async def ingest_events(payload: EventPayload) -> Dict[str, Any]:
                 "start_url": document.get("start_url"),
                 "end_url": document.get("end_url"),
                 "data": document["data"],
+                "video_local_path": document.get("video_local_path"),
+                "video_server_path": document.get("video_server_path"),
             }
             metadata_json = {
                 "savedAt": datetime.utcnow().isoformat(),
@@ -162,8 +168,41 @@ async def ingest_events(payload: EventPayload) -> Dict[str, Any]:
             # Non-fatal: log and continue
             print(f"Failed writing intermediate files: {file_err}")
 
-        return {"success": True, "documentId": str(result.inserted_id)}
+        return {"success": True, "documentId": str(result.inserted_id), "folderIso": iso}
     except PyMongoError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+
+@app.post("/api/events/video", dependencies=[Depends(verify_api_key)])
+async def upload_video(
+    folderIso: str = Form(...),
+    file: UploadFile = File(...),
+) -> Dict[str, Any]:
+    """Upload a recorded video and save it alongside payload/metadata.
+
+    The client must provide the ISO folder identifier returned by /api/events.
+    """
+    try:
+        project_root = Path(__file__).resolve().parent.parent
+        # Basic validation to avoid path traversal
+        if "/" in folderIso or ".." in folderIso or folderIso.strip() == "":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid folderIso")
+
+        folder = (project_root / "intermediate" / folderIso).resolve()
+        intermediate_root = (project_root / "intermediate").resolve()
+        if not str(folder).startswith(str(intermediate_root)):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid path")
+        if not folder.exists():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="folder not found")
+
+        video_path = folder / "video.webm"
+        content = await file.read()
+        video_path.write_bytes(content)
+
+        return {"success": True, "path": str(video_path)}
+    except HTTPException:
+        raise
+    except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
 

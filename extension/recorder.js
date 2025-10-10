@@ -389,9 +389,14 @@
     }
   }
 
-  // Function to get stable BID for an element
+  // Function to get stable BID for an element (BrowserGym)
   function getStableBID(element) {
-    // First try to get a stable ID from common attributes
+    // First try to get BrowserGym injected BID
+    if (element.hasAttribute('data-bid')) {
+      return element.getAttribute('data-bid');
+    }
+
+    // Fallback: try common attributes
     const attributes = [
       { attr: 'data-testid', prefix: 'test-' },
       { attr: 'aria-label', prefix: 'aria-' },
@@ -410,7 +415,7 @@
       }
     }
 
-    // Fallback: always generate a semantic hash
+    // Last fallback: generate a semantic hash
     const tag = element.tagName.toLowerCase();
     const classes = element.className && typeof element.className === 'string'
       ? element.className.split(/\s+/).filter(c => c).join('-')
@@ -599,7 +604,10 @@
           acc[attr.name] = attr.value;
           return acc;
         }, {}),
-        boundingBox: event.target.getBoundingClientRect().toJSON()
+        boundingBox: event.target.getBoundingClientRect().toJSON(),
+        // BrowserGym-specific attributes
+        browsergym_set_of_marks: event.target.getAttribute('browsergym_set_of_marks') || null,
+        browsergym_visibility_ratio: event.target.getAttribute('browsergym_visibility_ratio') || null
       }
     };
 
@@ -869,6 +877,49 @@
     return true; // Required for async sendResponse
   });
 
+  async function injectBrowserGymScript() {
+    return new Promise((resolve) => {
+      try {
+        // Check if already injected
+        const existingScript = document.getElementById('browsergym-inject-script');
+        if (existingScript) {
+          console.log('BrowserGym script already injected');
+          resolve(true);
+          return;
+        }
+
+        // Inject the BrowserGym script into page context
+        const script = document.createElement('script');
+        script.id = 'browsergym-inject-script';
+        script.src = chrome.runtime.getURL('browsergym-inject.js');
+        script.onload = () => {
+          console.log('BrowserGym script injected');
+          // Wait for injection to complete
+          const checkInterval = setInterval(() => {
+            if (typeof window.browsergym_injection_complete !== 'undefined') {
+              clearInterval(checkInterval);
+              resolve(window.browsergym_injection_complete);
+            }
+          }, 50);
+          // Timeout after 3 seconds
+          setTimeout(() => {
+            clearInterval(checkInterval);
+            console.warn('BrowserGym injection timeout');
+            resolve(false);
+          }, 3000);
+        };
+        script.onerror = () => {
+          console.error('Failed to inject BrowserGym script');
+          resolve(false);
+        };
+        (document.head || document.documentElement).appendChild(script);
+      } catch (err) {
+        console.error('BrowserGym injection error:', err);
+        resolve(false);
+      }
+    });
+  }
+
   function startRecording(taskId) {
     console.log("Recording started for task:", taskId);
     isRecording = true;
@@ -876,7 +927,7 @@
     cachedEventConfig = null; // Reload configuration for each new recording session
     
     // Get existing events if any
-    chrome.storage.local.get(['taskHistory'], (data) => {
+    chrome.storage.local.get(['taskHistory'], async (data) => {
       const taskHistory = data.taskHistory || {};
       if (taskHistory[currentTaskId]) {
         events = taskHistory[currentTaskId].events || [];
@@ -885,6 +936,11 @@
       }
       
       console.log("Retrieved existing events:", events);
+      
+      // Inject BrowserGym script before recording
+      console.log('Injecting BrowserGym BID system...');
+      await injectBrowserGymScript();
+      console.log('BrowserGym BID injection complete');
       
       // Initialize recording - but wait for DOM to be ready
       if (document.readyState === 'complete' || document.readyState === 'interactive') {
