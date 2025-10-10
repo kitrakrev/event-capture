@@ -303,12 +303,37 @@ class IFrameIdGenerator {
             "all"         // process every single element
         ]);
         console.log("BrowserGym IDs set, warnings:", warnings);
-        // Signal completion
-        window.browsergym_injection_complete = true;
+        // Signal completion via custom event (content script can listen)
+        document.dispatchEvent(new CustomEvent('browsergym-injection-complete', { 
+            detail: { success: true, warnings: warnings }
+        }));
     } catch (err) {
         console.error("BrowserGym injection failed:", err);
-        window.browsergym_injection_complete = false;
+        document.dispatchEvent(new CustomEvent('browsergym-injection-complete', { 
+            detail: { success: false, error: err.message }
+        }));
     }
 })();
+
+// Listen for re-mark requests from content script (for dynamically added content)
+document.addEventListener('browsergym-remark-request', async (event) => {
+    try {
+        console.log('🔄 Re-marking new DOM elements with BrowserGym...');
+        const warnings = await window.injectBrowserGym([
+            "",           // top-level frame
+            "data-bid",   // attribute key
+            "all"         // process all elements
+        ]);
+        console.log('✅ Re-marking complete, warnings:', warnings.length);
+        document.dispatchEvent(new CustomEvent('browsergym-remark-complete', { 
+            detail: { success: true, warnings: warnings }
+        }));
+    } catch (err) {
+        console.error('❌ Re-marking failed:', err);
+        document.dispatchEvent(new CustomEvent('browsergym-remark-complete', { 
+            detail: { success: false, error: err.message }
+        }));
+    }
+});
 
 

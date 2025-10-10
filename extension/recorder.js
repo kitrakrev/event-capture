@@ -14,21 +14,22 @@
 
 
 (function() {
-  // Check if we've already initialized to prevent duplicate initialization
+  // Allow re-injection for new recording sessions
+  // Instead of blocking entirely, we'll check during specific operations
   if (window.taskRecorderInitialized) {
-    console.log("Recorder already initialized, skipping initialization");
-    return;
+    console.log("Recorder script re-injected, allowing re-initialization");
+  } else {
+    window.taskRecorderInitialized = true;
+    console.log("Recorder script loaded and initialized");
   }
-  
-  // Mark as initialized
-  window.taskRecorderInitialized = true;
-  console.log("Recorder script loaded and initialized");
 
   // Private variables within this closure
   let events = [];
   let isRecording = false;
   let currentTaskId = null;
   let dynamicObserver = null; // Properly declare the observer variable
+  let browserGymObserver = null; // Observer for re-marking new DOM elements
+  let browserGymRemarkTimeout = null; // Debounce timer for re-marking
 
   // Add debouncing utility
   function debounce(func, wait) {
@@ -751,24 +752,135 @@
     return simpleRoleMap[tagName] || '';
   }
 
-  // Check if we should be recording when script loads
+  // Function to re-mark DOM elements with BrowserGym (for dynamically added content)
+  // Uses event-based communication to avoid CSP violations
+  function remarkWithBrowserGym() {
+    try {
+      // Dispatch a custom event that browsergym-inject.js will listen for
+      // This avoids CSP violations since we're not injecting inline scripts
+      document.dispatchEvent(new CustomEvent('browsergym-remark-request', {
+        detail: { timestamp: Date.now() }
+      }));
+      console.log('📤 Sent re-mark request to BrowserGym');
+    } catch (err) {
+      console.error('Failed to trigger BrowserGym re-marking:', err);
+    }
+  }
+
+  // Debounced version of remarkWithBrowserGym to avoid excessive calls
+  const debouncedRemark = debounce(remarkWithBrowserGym, 500);
+
+  // Start observing DOM mutations for BrowserGym re-marking
+  function startBrowserGymObserver() {
+    // Stop existing observer if any
+    if (browserGymObserver) {
+      browserGymObserver.disconnect();
+    }
+
+    browserGymObserver = new MutationObserver((mutations) => {
+      // Check if any mutations added new elements
+      const hasNewElements = mutations.some(mutation => 
+        mutation.type === 'childList' && mutation.addedNodes.length > 0
+      );
+
+      if (hasNewElements && isRecording) {
+        console.log('🔍 New DOM elements detected, scheduling re-mark...');
+        debouncedRemark();
+      }
+    });
+
+    // Observe the entire document for new elements
+    browserGymObserver.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+
+    console.log('👁️ BrowserGym MutationObserver started');
+  }
+
+  // Stop observing DOM mutations
+  function stopBrowserGymObserver() {
+    if (browserGymObserver) {
+      browserGymObserver.disconnect();
+      browserGymObserver = null;
+      console.log('👁️ BrowserGym MutationObserver stopped');
+    }
+  }
+
+  // Unified initialization function for both new recordings and resumed sessions
+  async function initializeRecordingSession(taskId, options = {}) {
+    const {
+      isResuming = false,           // true if resuming after navigation, false if new recording
+      existingEvents = [],          // events from storage (for resumed sessions)
+      clearCache = false            // whether to clear cached config
+    } = options;
+
+    console.log(`Initializing recording session: ${isResuming ? 'RESUMED' : 'NEW'}`, { taskId });
+
+    // Set recording state
+    isRecording = true;
+    currentTaskId = taskId;
+    events = existingEvents;
+
+    if (clearCache) {
+      cachedEventConfig = null;
+    }
+
+    // Initialize event listeners immediately
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      initializeRecording();
+    } else {
+      document.addEventListener('DOMContentLoaded', initializeRecording);
+    }
+
+    // Inject BrowserGym script asynchronously (doesn't block event capture)
+    (async () => {
+      try {
+        console.log(`Injecting BrowserGym BID system (${isResuming ? 'resumed' : 'new'})...`);
+        const success = await injectBrowserGymScript();
+        if (success) {
+          console.log('✅ BrowserGym BID injection complete');
+          // Start observing DOM for dynamic content after initial marking
+          startBrowserGymObserver();
+        } else {
+          console.warn('⚠️ BrowserGym BID injection completed with warnings');
+          // Still start observer even with warnings
+          startBrowserGymObserver();
+        }
+      } catch (err) {
+        console.error('❌ BrowserGym injection failed:', err);
+        // Continue recording with fallback BIDs, but don't start observer
+      }
+    })();
+
+    // Record page load event for resumed sessions (after navigation)
+    if (isResuming) {
+      const pageLoadEvent = {
+        type: EVENT_TYPES.PAGE_LOAD,
+        timestamp: Date.now(),
+        url: window.location.href,
+        title: document.title
+      };
+      events.push(pageLoadEvent);
+      saveEvents();
+    }
+  }
+
+  // Check if we should be recording when script loads (handles navigation during recording)
   chrome.storage.local.get(['isRecording', 'currentTaskId', 'taskHistory'], (data) => {
     console.log("Checking recording state:", data);
     if (data.isRecording && data.currentTaskId) {
-      isRecording = true;
-      currentTaskId = data.currentTaskId;
-      
       // Get existing events for this task
-      if (data.taskHistory && data.taskHistory[currentTaskId]) {
-        events = data.taskHistory[currentTaskId].events || [];
-      }
+      const existingEvents = (data.taskHistory && data.taskHistory[data.currentTaskId]) 
+        ? (data.taskHistory[data.currentTaskId].events || [])
+        : [];
       
-      // Initialize recording - but wait for DOM to be ready
-      if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        initializeRecording();
-      } else {
-        document.addEventListener('DOMContentLoaded', initializeRecording);
-      }
+      // Resume recording session
+      initializeRecordingSession(data.currentTaskId, {
+        isResuming: true,
+        existingEvents: existingEvents,
+        clearCache: false
+      });
     }
   });
 
@@ -888,27 +1000,31 @@
           return;
         }
 
+        // Listen for completion event from injected script
+        const completionHandler = (event) => {
+          console.log('BrowserGym injection complete:', event.detail);
+          clearTimeout(timeoutId);
+          resolve(event.detail.success);
+        };
+        document.addEventListener('browsergym-injection-complete', completionHandler, { once: true });
+
+        // Timeout after 3 seconds
+        const timeoutId = setTimeout(() => {
+          document.removeEventListener('browsergym-injection-complete', completionHandler);
+          console.warn('BrowserGym injection timeout');
+          resolve(false);
+        }, 3000);
+
         // Inject the BrowserGym script into page context
         const script = document.createElement('script');
         script.id = 'browsergym-inject-script';
         script.src = chrome.runtime.getURL('browsergym-inject.js');
         script.onload = () => {
-          console.log('BrowserGym script injected');
-          // Wait for injection to complete
-          const checkInterval = setInterval(() => {
-            if (typeof window.browsergym_injection_complete !== 'undefined') {
-              clearInterval(checkInterval);
-              resolve(window.browsergym_injection_complete);
-            }
-          }, 50);
-          // Timeout after 3 seconds
-          setTimeout(() => {
-            clearInterval(checkInterval);
-            console.warn('BrowserGym injection timeout');
-            resolve(false);
-          }, 3000);
+          console.log('BrowserGym script loaded');
         };
         script.onerror = () => {
+          clearTimeout(timeoutId);
+          document.removeEventListener('browsergym-injection-complete', completionHandler);
           console.error('Failed to inject BrowserGym script');
           resolve(false);
         };
@@ -922,34 +1038,22 @@
 
   function startRecording(taskId) {
     console.log("Recording started for task:", taskId);
-    isRecording = true;
-    currentTaskId = taskId;
-    cachedEventConfig = null; // Reload configuration for each new recording session
     
-    // Get existing events if any
-    chrome.storage.local.get(['taskHistory'], async (data) => {
+    // Get existing events from storage and initialize session
+    chrome.storage.local.get(['taskHistory'], (data) => {
       const taskHistory = data.taskHistory || {};
-      if (taskHistory[currentTaskId]) {
-        events = taskHistory[currentTaskId].events || [];
-      } else {
-        events = [];
-      }
+      const existingEvents = taskHistory[taskId] ? (taskHistory[taskId].events || []) : [];
       
-      console.log("Retrieved existing events:", events);
+      console.log("Retrieved existing events:", existingEvents);
       
-      // Inject BrowserGym script before recording
-      console.log('Injecting BrowserGym BID system...');
-      await injectBrowserGymScript();
-      console.log('BrowserGym BID injection complete');
+      // Use unified initialization function
+      initializeRecordingSession(taskId, {
+        isResuming: false,
+        existingEvents: existingEvents,
+        clearCache: true  // Clear config cache for new recordings
+      });
       
-      // Initialize recording - but wait for DOM to be ready
-      if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        initializeRecording();
-      } else {
-        document.addEventListener('DOMContentLoaded', initializeRecording);
-      }
-      
-      // Record initial page load as an event
+      // Record initial page load as an event (for new recordings)
       const pageLoadEvent = {
         type: EVENT_TYPES.PAGE_LOAD,
         timestamp: Date.now(),
@@ -969,7 +1073,7 @@
     detachDomListeners();
     detachNavigationListeners();
     
-    // Disconnect observer
+    // Disconnect observers
     if (dynamicObserver) {
       try {
         dynamicObserver.disconnect();
@@ -978,6 +1082,9 @@
         console.error("Error disconnecting observer:", e);
       }
     }
+    
+    // Stop BrowserGym observer
+    stopBrowserGymObserver();
     
     // Log recorded events
     console.log("Recorded events to save:", events);
