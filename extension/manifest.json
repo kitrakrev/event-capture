@@ -15,7 +15,8 @@
     "storage",
     "tabs",
     "downloads",
-    "offscreen"
+    "offscreen",
+    "automation"
   ],
   "host_permissions": [
     "<all_urls>"
