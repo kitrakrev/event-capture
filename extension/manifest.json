@@ -16,7 +16,7 @@
     "tabs",
     "downloads",
     "offscreen",
-    "automation"
+    "debugger"
   ],
   "host_permissions": [
     "<all_urls>"

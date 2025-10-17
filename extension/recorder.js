@@ -268,6 +268,7 @@
     // Handle input events - we only care about actual changes
     if (type === EVENT_TYPES.INPUT) {
         // Skip if the value hasn't changed
+        console.log('attempting to log input')
         if (currentValue === lastEventData.lastInputValue) {
             return true;
         }
@@ -833,13 +834,15 @@
       document.addEventListener('DOMContentLoaded', initializeRecording);
     }
 
-    // 🆕 CAPTURE HTML FOR EVERY PAGE LOAD (new or resumed)
+    // CAPTURE HTML FOR EVERY PAGE LOAD (new or resumed)
     const pageTimestamp = Date.now();
     if (document.readyState === 'complete' || document.readyState === 'interactive') {
       capturePageHTML(pageTimestamp);
+      captureAxTree(pageTimestamp);
     } else {
       document.addEventListener('DOMContentLoaded', () => {
         capturePageHTML(pageTimestamp);
+        captureAxTree(pageTimestamp);
       }, { once: true });
     }
 
@@ -1170,6 +1173,25 @@
     
     console.log('HTML captured for:', window.location.href);
   }
+
+    function captureAxTree(navigationTimestamp) {
+    if (!isRecording) return;
+    
+    const axTreeRequestData = {
+      navigationTimestamp: navigationTimestamp,
+      captureTimestamp: Date.now(),
+      url: window.location.href,
+      title: document.title
+    };
+    
+    chrome.runtime.sendMessage({ 
+      type: 'requestAxTree', 
+      data: axTreeRequestData 
+    });
+    
+    console.log('Accessibility tree capture requested for:', window.location.href);
+  }
+  
 
   // Function to handle navigation events
   function handleNavigation(event) {

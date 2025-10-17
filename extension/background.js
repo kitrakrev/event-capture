@@ -398,6 +398,82 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       }
     });  
+  } else if (message.type === 'requestAxTree') {
+    console.log("Received accessibility tree capture request for:", message.data.url);
+    
+    const tabId = sender.tab.id;
+    
+    // Attach debugger to the tab
+    chrome.debugger.attach({tabId: tabId}, '1.3', () => {
+      if (chrome.runtime.lastError) {
+        console.error('Failed to attach debugger:', chrome.runtime.lastError);
+        return;
+      }
+      
+      // Enable the Accessibility domain
+      chrome.debugger.sendCommand({tabId: tabId}, 'Accessibility.enable', {}, () => {
+        if (chrome.runtime.lastError) {
+          console.error('Failed to enable Accessibility domain:', chrome.runtime.lastError);
+          chrome.debugger.detach({tabId: tabId});
+          return;
+        }
+        
+        // Request the full accessibility tree
+        chrome.debugger.sendCommand({tabId: tabId}, 'Accessibility.getFullAXTree', {}, (result) => {
+          // Clean up CDP connection
+          chrome.debugger.sendCommand({tabId: tabId}, 'Accessibility.disable', {}, () => {
+            chrome.debugger.detach({tabId: tabId});
+          });
+          
+          if (chrome.runtime.lastError || !result) {
+            console.error('Failed to get accessibility tree:', chrome.runtime.lastError);
+            return;
+          }
+          
+          chrome.storage.local.get(['isRecording', 'currentTaskId', 'taskHistory', 'videoStartedAtMs'], (data) => {
+            if (data.isRecording && data.currentTaskId && data.taskHistory) {
+              const taskHistory = data.taskHistory;
+              const taskId = data.currentTaskId;
+              
+              if (taskHistory[taskId]) {
+                const events = taskHistory[taskId].events || [];
+                
+                // Calculate video timestamp relative to video start
+                let videoTimeMs = null;
+                if (videoRecording.startedAtMs || data.videoStartedAtMs) {
+                  const base = videoRecording.startedAtMs || data.videoStartedAtMs;
+                  videoTimeMs = Math.max(0, Number(message.data.captureTimestamp) - Number(base));
+                }
+                
+                const axTreeEvent = {
+                  type: 'axTreeSnapshot',
+                  navigationTimestamp: message.data.navigationTimestamp,
+                  captureTimestamp: message.data.captureTimestamp,
+                  axTreeTimestamp: Date.now(),
+                  timestamp: message.data.navigationTimestamp, // Use navigation timestamp for sorting
+                  url: message.data.url,
+                  title: message.data.title,
+                  axTree: result.nodes,
+                  ...(videoTimeMs != null && {
+                    videoTimeMs: videoTimeMs,
+                    video_timestamp: videoTimeMs,
+                    video_event_start_ms: videoTimeMs,
+                    video_event_end_ms: videoTimeMs
+                  })
+                };
+                
+                events.push(axTreeEvent);
+                taskHistory[taskId].events = events;
+                
+                chrome.storage.local.set({ taskHistory: taskHistory }, () => {
+                  console.log("Accessibility tree snapshot saved to task history");
+                });
+              }
+            }
+          });
+        });
+      });
+    });
   } else if (message.action === "viewTaskDetails") {
     // Manifest V3 background scripts cannot use DOM APIs.
     // Open a new tab to details.html and pass the taskId as a query parameter.
