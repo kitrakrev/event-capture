@@ -834,18 +834,6 @@
       document.addEventListener('DOMContentLoaded', initializeRecording);
     }
 
-    // CAPTURE HTML FOR EVERY PAGE LOAD (new or resumed)
-    const pageTimestamp = Date.now();
-    if (document.readyState === 'complete' || document.readyState === 'interactive') {
-      capturePageHTML(pageTimestamp);
-      captureAxTree(pageTimestamp);
-    } else {
-      document.addEventListener('DOMContentLoaded', () => {
-        capturePageHTML(pageTimestamp);
-        captureAxTree(pageTimestamp);
-      }, { once: true });
-    }
-
     // Inject BrowserGym script asynchronously (doesn't block event capture)
     (async () => {
       try {
@@ -1149,29 +1137,6 @@
         attemptRecovery();
       }
     }
-  }
-
-  function capturePageHTML(navigationTimestamp) {
-    if (!isRecording) return;
-    
-    const htmlData = {
-      type: 'htmlSnapshot',
-      navigationTimestamp: navigationTimestamp,  // When navigation started
-      captureTimestamp: Date.now(),              // When HTML actually captured
-      url: window.location.href,
-      title: document.title,
-      html: document.documentElement.outerHTML,
-      characterSet: document.characterSet,
-      readyState: document.readyState
-    };
-    
-    // Send to background script for storage
-    chrome.runtime.sendMessage({ 
-      type: 'capturedHTML', 
-      data: htmlData 
-    });
-    
-    console.log('HTML captured for:', window.location.href);
   }
 
     function captureAxTree(navigationTimestamp) {

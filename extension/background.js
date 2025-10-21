@@ -344,8 +344,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             video_event_start_ms: relative,
             video_event_end_ms: relative
           } : message.event;
-          events.push(eventWithRelative);
-          taskHistory[taskId].events = events;
+
+          const eventWithDetails = {
+            ...eventWithRelative,
+            captureTimestamp: Date.now(),
+            url: window.location.href,
+            title: document.title,
+            html: document.documentElement.outerHTML,
+            characterSet: document.characterSet,
+            readyState: document.readyState
+          };
+
+          events.push(eventWithDetails);
+          taskHistory[taskId].events = events;          
           
           // Save updated task history
           chrome.storage.local.set({ taskHistory: taskHistory }, () => {
@@ -353,51 +364,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           });
         }
       }
-    });
-  } else if (message.type === 'capturedHTML') {
-    console.log("Received captured HTML for:", message.data.url);
-    chrome.storage.local.get(['isRecording', 'currentTaskId', 'taskHistory', 'videoStartedAtMs'], (data) => {
-      if (data.isRecording && data.currentTaskId && data.taskHistory) {
-        const taskHistory = data.taskHistory;
-        const taskId = data.currentTaskId;
-        
-        if (taskHistory[taskId]) {
-          const events = taskHistory[taskId].events || [];
-          
-          // Calculate video timestamp relative to video start
-          let videoTimeMs = null;
-          if (videoRecording.startedAtMs || data.videoStartedAtMs) {
-            const base = videoRecording.startedAtMs || data.videoStartedAtMs;
-            videoTimeMs = Math.max(0, Number(message.data.captureTimestamp) - Number(base));
-          }
-          
-          const htmlEvent = {
-            type: 'htmlSnapshot',
-            navigationTimestamp: message.data.navigationTimestamp,
-            captureTimestamp: message.data.captureTimestamp,
-            timestamp: message.data.navigationTimestamp, // Use navigation timestamp for sorting
-            url: message.data.url,
-            title: message.data.title,
-            html: message.data.html,
-            characterSet: message.data.characterSet,
-            readyState: message.data.readyState,
-            ...(videoTimeMs != null && {
-              videoTimeMs: videoTimeMs,
-              video_timestamp: videoTimeMs,
-              video_event_start_ms: videoTimeMs,
-              video_event_end_ms: videoTimeMs
-            })
-          };
-          
-          events.push(htmlEvent);
-          taskHistory[taskId].events = events;
-          
-          chrome.storage.local.set({ taskHistory: taskHistory }, () => {
-            console.log("HTML snapshot saved to task history");
-          });
-        }
-      }
-    });  
+    }); 
   } else if (message.type === 'requestAxTree') {
     console.log("Received accessibility tree capture request for:", message.data.url);
     
