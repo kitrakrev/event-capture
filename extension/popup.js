@@ -16,25 +16,6 @@ function checkStorage() {
   });
 }
 
-// Call it when popup opens
-document.addEventListener('DOMContentLoaded', async () => {
-  console.log("Popup opened");
-  checkStorage();
-  
-  chrome.storage.local.get(['isRecording', 'recordingStartTime'], (data) => {
-    if (data.isRecording) {
-      // We're already recording, update UI
-      document.getElementById('startTask').disabled = true;
-      document.getElementById('endTask').disabled = false;
-      
-      // Start timer
-      if (data.recordingStartTime) {
-        startTimer(data.recordingStartTime);
-      }
-    }
-  });
-});
-
 // Add timer element
 const timerElement = document.createElement('div');
 timerElement.id = 'timer';
@@ -48,19 +29,6 @@ const mainPushButton = document.getElementById('pushToMongo');
 let lastCompletedTaskId = null;
 const taskDescriptionInput = document.getElementById('taskDescription');
 const TASK_TITLE_STORAGE_KEY = 'taskTitleDraft';
-
-if (taskDescriptionInput) {
-  chrome.storage.local.get([TASK_TITLE_STORAGE_KEY], (data) => {
-    const storedTitle = data[TASK_TITLE_STORAGE_KEY];
-    if (typeof storedTitle === 'string') {
-      taskDescriptionInput.value = storedTitle;
-    }
-  });
-
-  taskDescriptionInput.addEventListener('input', () => {
-    chrome.storage.local.set({ [TASK_TITLE_STORAGE_KEY]: taskDescriptionInput.value });
-  });
-}
 
 function startTimer(startTime) {
   const updateTimer = () => {
@@ -76,6 +44,20 @@ function startTimer(startTime) {
   // Update immediately and then every second
   updateTimer();
   timerInterval = setInterval(updateTimer, 1000);
+}
+
+// Initialize task description input
+if (taskDescriptionInput) {
+  chrome.storage.local.get([TASK_TITLE_STORAGE_KEY], (data) => {
+    const storedTitle = data[TASK_TITLE_STORAGE_KEY];
+    if (typeof storedTitle === 'string') {
+      taskDescriptionInput.value = storedTitle;
+    }
+  });
+
+  taskDescriptionInput.addEventListener('input', () => {
+    chrome.storage.local.set({ [TASK_TITLE_STORAGE_KEY]: taskDescriptionInput.value });
+  });
 }
 
 async function pushTaskToMongo(taskData, buttonElement) {
@@ -501,7 +483,23 @@ function addTaskHistoryButton() {
 }
 
 // Call this function when the popup is loaded
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
+  console.log("Popup opened");
+  checkStorage();
+  
+  chrome.storage.local.get(['isRecording', 'recordingStartTime'], (data) => {
+    if (data.isRecording) {
+      // We're already recording, update UI
+      document.getElementById('startTask').disabled = true;
+      document.getElementById('endTask').disabled = false;
+      
+      // Start timer
+      if (data.recordingStartTime) {
+        startTimer(data.recordingStartTime);
+      }
+    }
+  });
+  
   if (mainPushButton) {
     mainPushButton.disabled = true;
   }
