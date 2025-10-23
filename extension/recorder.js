@@ -23,9 +23,6 @@
     console.log("Recorder script loaded and initialized");
   }
 
-  // Ensure critical listeners are attached as early as possible
-  preAttachCriticalListeners();
-
   // Private variables within this closure
   let events = [];
   let isRecording = false;
@@ -34,6 +31,9 @@
   let browserGymObserver = null; // Observer for re-marking new DOM elements
   let browserGymRemarkTimeout = null; // Debounce timer for re-marking
   const criticalDomListeners = new Map(); // Always-on, capture-phase listeners
+
+  // Ensure critical listeners are attached as early as possible
+  preAttachCriticalListeners();
 
   // Add debouncing utility
   function debounce(func, wait) {
