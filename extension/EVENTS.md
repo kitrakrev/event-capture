@@ -35,16 +35,14 @@ The recorder is driven by `event-config.json`, which declares every DOM and navi
 
 | Event Name    | Default | Notes                                      |
 |---------------|---------|--------------------------------------------|
-| `popstate`    | true    | Browser back/forward navigation            |
+| `popstate`    | true    | Browser back/forward navigation (emits `popstate`) |
 | `pushState`   | true    | SPA route changes via history API          |
 | `replaceState`| true    | SPA history replacements                   |
 | `beforeunload`| true    | Warn when page is leaving / refreshing     |
 
+Recorded navigation events use the same `type` value as the underlying browser event (e.g., `popstate`, `pushState`).
+
 Handlers for navigation events are fixed in `recorder.js` (`handleNavigation`, `handleBeforeUnload`). To add more, extend `NAVIGATION_HANDLER_MAP` and reference the handler in `event-config.json`.
-
-## Page Load Meta Event
-
-- `pageLoad` (internal) is recorded automatically when recording starts; it is not configurable via the JSON file.
 
 ## Observer Toggle
 
@@ -57,4 +55,3 @@ Handlers for navigation events are fixed in `recorder.js` (`handleNavigation`, `
 3. Reload the Chrome extension so the new configuration and code are applied.
 
 That file (`event-config.json`) is the single source of truth for which events are active; edits there will be picked up next time the recorder initializes.
-

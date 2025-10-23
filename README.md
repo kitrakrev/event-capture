@@ -29,10 +29,6 @@ These two files are the only drivers; everything else reads from them.
 - MongoDB Atlas cluster and connection string
 - Chrome (for loading the extension)
 - Python 3.10+
-- uv (fast Python package manager) — install via:
-  ```bash
-  python3 -m pip install --user uv
-  ```
 
 ## Setup
 
@@ -47,21 +43,22 @@ These two files are the only drivers; everything else reads from them.
 
 ## Quick Start
 
-Run everything from the project root (this folder):
+Run everything from the repository root (`capstone_git`):
 
 ```bash
-# 1) Install uv (if you don't have it)
-python3 -m pip install --user uv
+# 0) Enter the project directory
+cd event-capture
 
-# 2) Create a virtual environment and install server dependencies
-uv venv server/.venv
-uv pip install -r server/requirements.txt --python server/.venv/bin/python
+# 1) Create a virtual environment and install server dependencies
+python3 -m venv server/.venv
+source server/.venv/bin/activate
+pip install -r server/requirements.txt
 
-# 3) Copy env template and edit credentials (env is already in repo)
+# 2) Copy env template and edit credentials (env is already in repo)
 cp server/.env.example server/.env
 # Open server/.env and set ATLAS_URI, API_KEY (optional), etc.
 
-# 4) Start the API server on port 3000 (still from project root)
+# 3) Start the API server on port 3000
 server/.venv/bin/python -m uvicorn server.server:app --host 0.0.0.0 --port 3000 --reload
 ```
 
@@ -69,6 +66,12 @@ Then load the Chrome extension:
 - Open Chrome > Extensions > Enable Developer mode > Load unpacked
 - Select the `extension/` directory (the folder containing `manifest.json`)
 - The extension will POST to `http://localhost:3000/api/events` by default
+
+For subsequent shells, re-activate with:
+
+```bash
+source event-capture/server/.venv/bin/activate
+```
 
 > Credentials: See Setup for using the defaults or replacing with your own.
 
@@ -106,13 +109,12 @@ The central configuration for what gets recorded is `extension/event-config.json
 
 - It is the single source of truth for enabling/disabling categories of events.
 - Each entry defines the browser event name, whether it is enabled, and which handler to use.
-- Some entries may include a `screenshot` flag (historically used; currently screenshots are disabled in code).
+- Historical `screenshot` toggles have been removed now that screen recording is always on.
 
 Fields:
 - `name`: The DOM or navigation event name (e.g., `click`, `input`, `popstate`).
 - `enabled`: `true` to attach a listener and record the event; `false` to skip.
 - `handler`: Which function the recorder will attach for this event (`recordEvent`, `debouncedRecordInput`, `debouncedRecordScroll`).
-- `screenshot` (legacy): Whether a screenshot was intended at the time of this event (not active now).
 
 Details (click to expand):
 <details>
@@ -147,15 +149,256 @@ Event meanings and examples:
 | keydown/up   | Keyboard presses/releases                        | Pressing `Enter`
 | mouseover/out| Pointer enter/leave (interactive/tooltip)        | Hover over menu item
 | submit       | Form submissions                                 | Submitting login form
-| navigation   | Page navigations                                 | `/home` → `/profile`
-| pageLoad     | Initial page load                                | Page title and URL
+| popstate/pushState/replaceState | Page navigations (recorded with the same event name) | `/home` → `/profile`
 | focus/blur   | Focus gained/lost                                | Focusing an input
 | touch*       | Mobile touch interactions                        | `touchstart` on element
+
+Navigation events emitted by the recorder use the browser event name for `type` (e.g., `popstate`) and include `category: "navigation"` for downstream grouping.
 
 Adding a new event type:
 1. Add an entry in `extension/event-config.json` (set `enabled: true` and choose a `handler`).
 2. If it needs special handling, add logic in `extension/recorder.js` (e.g., extend `recordEvent` or add a new handler and map it in `getHandlerByKey`).
 3. Optionally add a summary row to the table above in this README.
+
+### Recommended Settings (Required vs. Optional)
+
+- Keep enabled (core flow integrity)
+  - `click`: Primary interaction signal; required for almost every task.
+  - `navigationEvents` (`popstate`, `pushState`, `replaceState`, `beforeunload`): Strongly recommended to reconstruct flows and correlate with screen video.
+  - `submit`: Recommended for forms and e‑commerce (e.g., Add to Cart triggers form submits on many sites).
+  - `change`: Recommended if you need actual selection/value changes (e.g., Quantity dropdowns, checkboxes, radios).
+  - `input`: Recommended if you need typed text; disable if minimizing PII.
+
+- Optional / noisy (enable only when needed)
+  - `scroll`: High‑volume; enable if scroll position matters for analysis.
+  - `mouseover` / `mouseout` (hover): High‑volume; enable for hover‑driven menus/tooltips.
+  - `pointerdown` / `pointerup` / `mousedown` / `mouseup`: Usually redundant with `click`; enable for low‑level pointer diagnostics or exotic widgets.
+  - `focus` / `blur`: Useful for detailed form flows; optional otherwise.
+  - `keydown` / `keyup` / `keypress`: Enable for keyboard‑centric tasks; prefer `keydown`/`keyup` over legacy `keypress`.
+  - `touchstart` / `touchend` / `touchmove`: Only for mobile/touch testing.
+  - `observers.dynamicDom`: Enable to re‑mark dynamic pages (BrowserGym marks); may add CPU overhead.
+
+Note: The recorder attaches early, capture‑phase listeners for robustness on sites that stop propagation; the `enabled` flags in `event-config.json` still govern which events are actually recorded.
+
+### Lean Default (Core Signals Only)
+
+The repo now defaults to a lean capture preset focused on core flow signals:
+
+- Enabled: `click`, `input`, `change`, `submit`, and all `navigationEvents`.
+- Disabled: everything else (scroll, hover, pointer low‑level, focus/blur, key*, touch*, etc.).
+
+Example minimal config
+```json
+{
+  "domEvents": [
+    { "name": "click",  "enabled": true,  "handler": "recordEvent" },
+    { "name": "input",  "enabled": true,  "handler": "debouncedRecordInput" },
+    { "name": "change", "enabled": true,  "handler": "debouncedRecordInput" },
+    { "name": "submit", "enabled": true,  "handler": "recordEvent" },
+    { "name": "scroll", "enabled": false, "handler": "debouncedRecordScroll" },
+    { "name": "mouseover", "enabled": false, "handler": "recordEvent" },
+    { "name": "mouseout",  "enabled": false, "handler": "recordEvent" },
+    { "name": "keydown",   "enabled": false, "handler": "recordEvent" },
+    { "name": "keyup",     "enabled": false, "handler": "recordEvent" },
+    { "name": "keypress",  "enabled": false, "handler": "recordEvent" },
+    { "name": "pointerdown", "enabled": false, "handler": "recordEvent" },
+    { "name": "pointerup",   "enabled": false, "handler": "recordEvent" }
+  ],
+  "navigationEvents": [
+    { "name": "popstate",     "enabled": true },
+    { "name": "pushState",    "enabled": true },
+    { "name": "replaceState", "enabled": true },
+    { "name": "beforeunload", "enabled": true }
+  ],
+  "observers": { "dynamicDom": false }
+}
+```
+
+This keeps event volume low while preserving everything needed to reconstruct task flows (including SELECT dropdown changes and form submits like “Add to Cart”).
+
+### Config Examples (Event → HTML → Recorded)
+
+The snippets below show how an event is enabled in `event-config.json`, a minimal HTML that triggers it, and an excerpt of the recorded payload.
+
+#### click
+
+Config
+```json
+{ "name": "click", "enabled": true, "handler": "recordEvent" }
+```
+
+HTML
+```html
+<button id="buy">Add to Cart</button>
+<!-- Amazon also uses <input type="submit" id="add-to-cart-button" /> -->
+```
+
+Recorded (excerpt)
+```json
+{ "type": "click", "target": { "tag": "BUTTON", "id": "buy", "text": "Add to Cart" } }
+```
+
+#### input (live typing)
+
+Config
+```json
+{ "name": "input", "enabled": true, "handler": "debouncedRecordInput" }
+```
+
+HTML
+```html
+<label>Email <input id="email" type="email" /></label>
+```
+
+Recorded (excerpt)
+```json
+{ "type": "input", "target": { "id": "email" }, "inputType": "insertText", "data": "a" }
+```
+
+#### change (selects, checkboxes, committed changes)
+
+Config
+```json
+{ "name": "change", "enabled": true, "handler": "debouncedRecordInput" }
+```
+
+HTML (Quantity dropdown)
+```html
+<label for="qty">Quantity:</label>
+<select id="qty">
+  <option>1</option>
+  <option>2</option>
+  <option>3</option>
+  <!-- Amazon often uses a stylized span that forwards to a hidden <select>; enabling change captures the value update. -->
+</select>
+```
+
+Recorded (excerpt)
+```json
+{ "type": "change", "target": { "tag": "SELECT", "id": "qty" }, "targetValue": "2" }
+```
+
+#### submit (form submissions)
+
+Config
+```json
+{ "name": "submit", "enabled": true, "handler": "recordEvent" }
+```
+
+HTML
+```html
+<form id="f">
+  <input name="q" />
+  <button type="submit" id="go">Search</button>
+</form>
+```
+
+Recorded (excerpt)
+```json
+{ "type": "submit", "target": { "tag": "FORM", "id": "f" } }
+```
+
+#### keydown / keyup / keypress
+
+Config
+```json
+{ "name": "keydown", "enabled": true, "handler": "recordEvent" }
+{ "name": "keyup",   "enabled": true, "handler": "recordEvent" }
+{ "name": "keypress", "enabled": true, "handler": "recordEvent" }
+```
+
+HTML
+```html
+<input id="search" placeholder="Type and press Enter" />
+```
+
+Recorded (excerpt)
+```json
+{ "type": "keydown", "key": "Enter", "code": "Enter", "target": { "id": "search" } }
+```
+
+#### scroll
+
+Config
+```json
+{ "name": "scroll", "enabled": true, "handler": "debouncedRecordScroll" }
+```
+
+HTML
+```html
+<div id="pane" style="height:120px; overflow:auto">
+  <div style="height:800px"></div>
+</div>
+```
+
+Recorded (excerpt)
+```json
+{ "type": "scroll", "target": { "id": "pane" }, "scroll": { "scrollTop": 120 } }
+```
+
+#### mouseover / mouseout
+
+Config
+```json
+{ "name": "mouseover", "enabled": true, "handler": "recordEvent" }
+{ "name": "mouseout",  "enabled": true, "handler": "recordEvent" }
+```
+
+HTML
+```html
+<a id="help" title="Opens help">Help</a>
+```
+
+Recorded (excerpt)
+```json
+{ "type": "mouseover", "target": { "id": "help" } }
+```
+
+#### pointer / touch (mobile/pen)
+
+Config
+```json
+{ "name": "pointerdown", "enabled": true, "handler": "recordEvent" }
+{ "name": "pointerup",   "enabled": true, "handler": "recordEvent" }
+{ "name": "touchstart",  "enabled": true, "handler": "recordEvent" }
+{ "name": "touchend",    "enabled": true, "handler": "recordEvent" }
+{ "name": "touchmove",   "enabled": true, "handler": "recordEvent" }
+```
+
+HTML
+```html
+<button id="tap">Tap me</button>
+```
+
+Recorded (excerpt)
+```json
+{ "type": "pointerdown", "pointerType": "touch", "target": { "id": "tap" } }
+```
+
+#### navigation (SPA + back/forward)
+
+Config
+```json
+{ "name": "popstate",     "enabled": true }
+{ "name": "pushState",    "enabled": true }
+{ "name": "replaceState", "enabled": true }
+{ "name": "beforeunload", "enabled": true }
+```
+
+HTML/JS
+```html
+<button id="route">Go to /settings</button>
+<script>
+  document.getElementById('route').onclick = () => {
+    history.pushState({}, '', '/settings');
+  };
+</script>
+```
+
+Recorded (excerpt)
+```json
+{ "type": "pushState", "fromUrl": "https://example.com/", "toUrl": "https://example.com/settings" }
+```
 
 ---
 
@@ -230,16 +473,10 @@ Sample MongoDB document (click to expand):
 {
   "task": "Search and submit",
   "duration": 42,
-  "events_recorded": 3,
+  "events_recorded": 2,
   "start_url": "https://example.com",
   "end_url": "https://example.com/results",
   "data": [
-    {
-      "type": "pageLoad",
-      "timestamp": "2025-10-06T16:28:10.123Z",
-      "url": "https://example.com",
-      "title": "Home"
-    },
     {
       "type": "click",
       "timestamp": 1728213140000,
@@ -260,7 +497,8 @@ Sample MongoDB document (click to expand):
       }
     },
     {
-      "type": "navigation",
+      "type": "popstate",
+      "category": "navigation",
       "timestamp": "2025-10-06T16:28:20.456Z",
       "fromUrl": "https://example.com",
       "toUrl": "https://example.com/results",

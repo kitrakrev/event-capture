@@ -23,6 +23,9 @@
     console.log("Recorder script loaded and initialized");
   }
 
+  // Ensure critical listeners are attached as early as possible
+  preAttachCriticalListeners();
+
   // Private variables within this closure
   let events = [];
   let isRecording = false;
@@ -30,6 +33,7 @@
   let dynamicObserver = null; // Properly declare the observer variable
   let browserGymObserver = null; // Observer for re-marking new DOM elements
   let browserGymRemarkTimeout = null; // Debounce timer for re-marking
+  const criticalDomListeners = new Map(); // Always-on, capture-phase listeners
 
   // Add debouncing utility
   function debounce(func, wait) {
@@ -70,7 +74,6 @@
   // All the different types of events we can capture
   // This is like our dictionary of possible user actions
   const EVENT_TYPES = {
-    PAGE_LOAD: 'pageLoad',    // When a page first loads
     INPUT: 'input',          // When user types or changes input
     CLICK: 'click',          // Mouse clicks
     NAVIGATION: 'navigation', // Page navigation
@@ -86,7 +89,10 @@
     BLUR: 'blur',           // Element losing focus
     TOUCH_START: 'touchstart', // Mobile touch start
     TOUCH_END: 'touchend',    // Mobile touch end
-    TOUCH_MOVE: 'touchmove'   // Mobile touch movement
+    TOUCH_MOVE: 'touchmove',   // Mobile touch movement
+    POINTER_DOWN: 'pointerdown',
+    POINTER_UP: 'pointerup',
+    POINTER_MOVE: 'pointermove'
   };
 
   const DEFAULT_EVENT_CONFIG = {
@@ -94,6 +100,8 @@
       { name: 'click', enabled: true, handler: 'recordEvent' },
       { name: 'mousedown', enabled: true, handler: 'recordEvent' },
       { name: 'mouseup', enabled: true, handler: 'recordEvent' },
+      { name: 'pointerdown', enabled: true, handler: 'recordEvent' },
+      { name: 'pointerup', enabled: true, handler: 'recordEvent' },
       { name: 'mouseover', enabled: true, handler: 'recordEvent' },
       { name: 'mouseout', enabled: true, handler: 'recordEvent' },
       { name: 'keydown', enabled: true, handler: 'recordEvent' },
@@ -123,6 +131,28 @@
   let cachedEventConfig = null;
   const activeDomListeners = new Map();
   const activeNavigationListeners = new Map();
+  let enabledDomEventNames = null;
+  let enabledNavigationEventNames = null;
+
+  // Attach a minimal set of capture-phase listeners ASAP so we preempt
+  // site-level capturing handlers that may stop propagation (e.g., Amazon)
+  function preAttachCriticalListeners() {
+    try {
+      const critical = ['pointerdown', 'mousedown', 'mouseup', 'click', 'submit'];
+      critical.forEach((name) => {
+        if (!criticalDomListeners.has(name)) {
+          document.addEventListener(name, (e) => {
+            // Only record if a session is active; attaching early ensures ordering
+            if (isRecording) recordEvent(e);
+          }, true);
+          criticalDomListeners.set(name, true);
+          console.log(`Pre-attached critical listener for ${name}`);
+        }
+      });
+    } catch (err) {
+      console.warn('Failed to pre-attach critical listeners:', err);
+    }
+  }
 
   function mergeEventConfig(userConfig) {
     const configClone = JSON.parse(JSON.stringify(DEFAULT_EVENT_CONFIG));
@@ -200,7 +230,10 @@
   // Track click behavior to handle double-clicks and rapid clicks
   const clickState = {
     lastClickTime: 0,
+    lastMouseUpTime: 0,
     lastClickTarget: null,
+    lastClickButton: null,
+    lastClickCoords: null,
     clickCount: 0
   };
 
@@ -229,21 +262,50 @@
   // This function helps us decide if we should ignore an event
   // We don't want to record every tiny movement or duplicate actions
   function shouldIgnoreEvent(event, type) {
-    const element = event.target;
+    const { primary: resolvedTarget, original: originalTarget } = resolveEventTarget(event.target);
+    const element = resolvedTarget || originalTarget;
+    if (!element) {
+      return true;
+    }
+
     const currentValue = element.value || '';
     const currentTime = Date.now();
     
     // Special handling for clicks - we want to be smart about what clicks we record
     if (type === EVENT_TYPES.CLICK || type === 'mouseup') {
-        // Ignore super quick double-clicks (less than 25ms apart)
-        if (currentTime - clickState.lastClickTime < 25 && 
-            element === clickState.lastClickTarget) {
+        const isClickEvent = type === EVENT_TYPES.CLICK;
+        const sameTarget = element === clickState.lastClickTarget;
+        const sameButton = clickState.lastClickButton === event.button;
+        const lastCoords = clickState.lastClickCoords;
+        const currentCoords = {
+            x: typeof event.screenX === 'number' ? event.screenX : 0,
+            y: typeof event.screenY === 'number' ? event.screenY : 0
+        };
+        const previousTime = isClickEvent ? clickState.lastClickTime : clickState.lastMouseUpTime;
+
+        if (lastCoords && sameButton) {
+            const deltaX = Math.abs(currentCoords.x - lastCoords.x);
+            const deltaY = Math.abs(currentCoords.y - lastCoords.y);
+            const isSameSpot = deltaX <= 2 && deltaY <= 2;
+            if (isSameSpot && previousTime && (currentTime - previousTime) < 200) {
+                return true;
+            }
+        }
+
+        // Ignore super quick consecutive clicks on the same element
+        if (isClickEvent && previousTime && sameTarget && (currentTime - previousTime) < 25) {
             return true;
         }
 
         // Remember this click for next time
-        clickState.lastClickTime = currentTime;
+        if (isClickEvent) {
+            clickState.lastClickTime = currentTime;
+        } else {
+            clickState.lastMouseUpTime = currentTime;
+        }
         clickState.lastClickTarget = element;
+        clickState.lastClickButton = event.button;
+        clickState.lastClickCoords = currentCoords;
         clickState.clickCount++;
         
         // Log what we clicked on - helpful for debugging
@@ -291,7 +353,8 @@
     }
 
     // Check for duplicate events within a short time window
-    if (lastEventData.type === type && 
+    if (type !== EVENT_TYPES.CLICK &&
+        lastEventData.type === type && 
         lastEventData.target === element && 
         currentTime - lastEventData.timestamp < 300) {
         return true; // Ignore duplicates within 300ms
@@ -439,10 +502,130 @@
     return (hash >>> 0).toString(36).substring(0, 6);
   }
 
+  function resolveEventTarget(node) {
+    if (!node) {
+      return { primary: null, original: null };
+    }
+
+    let element = node;
+    if (element.nodeType !== Node.ELEMENT_NODE) {
+      element = element.parentElement;
+    }
+
+    if (!element) {
+      return { primary: null, original: null };
+    }
+
+    const interactiveSelector = [
+      'button',
+      'select',
+      'textarea',
+      'input',
+      'option',
+      'label',
+      'summary',
+      'details',
+      'a[href]',
+      '[role=\"button\"]',
+      '[role=\"link\"]',
+      '[role=\"menuitem\"]',
+      '[role=\"option\"]',
+      '[role=\"radio\"]',
+      '[role=\"checkbox\"]',
+      '[role=\"tab\"]',
+      '[role=\"textbox\"]',
+      '[contenteditable]',
+      '[data-action]',
+      '[data-testid]',
+      '[data-bid]',
+      '[aria-label]',
+      '[aria-labelledby]',
+      '[tabindex]:not([tabindex=\"-1\"])'
+    ].join(', ');
+
+    const primary = element.closest(interactiveSelector) || element;
+    return { primary, original: element };
+  }
+
+  function getElementBoundingBox(element) {
+    if (!element || typeof element.getBoundingClientRect !== 'function') {
+      return null;
+    }
+
+    try {
+      const rect = element.getBoundingClientRect();
+      if (!rect) return null;
+      if (typeof rect.toJSON === 'function') {
+        return rect.toJSON();
+      }
+      return {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        left: rect.left
+      };
+    } catch (err) {
+      console.error('Failed to compute bounding box:', err);
+      return null;
+    }
+  }
+
+  function buildTargetMetadata(element) {
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) {
+      return null;
+    }
+
+    const attributes = {};
+    try {
+      Array.from(element.attributes || []).forEach(attr => {
+        attributes[attr.name] = attr.value;
+      });
+    } catch (err) {
+      console.warn('Failed to serialize attributes for element', element, err);
+    }
+
+    let textContent = element.textContent || '';
+    textContent = textContent.trim().replace(/\s+/g, ' ');
+    const truncatedText = textContent.length > 200 ? `${textContent.slice(0, 200)}...` : textContent;
+
+    let outerHTMLSnippet = null;
+    if (typeof element.outerHTML === 'string') {
+      const trimmedOuter = element.outerHTML.trim();
+      if (trimmedOuter) {
+        outerHTMLSnippet = trimmedOuter.length > 3000
+          ? `${trimmedOuter.slice(0, 3000)}...`
+          : trimmedOuter;
+      }
+    }
+
+    return {
+      tag: element.tagName,
+      id: element.id,
+      class: element.className,
+      text: truncatedText,
+      value: element.value,
+      isInteractive: isInteractiveElement(element),
+      xpath: getElementXPath(element),
+      cssPath: getElementCssPath(element),
+      bid: getStableBID(element),
+      a11y: getA11yIdentifiers(element),
+      attributes,
+      boundingBox: getElementBoundingBox(element),
+      browsergym_set_of_marks: element.getAttribute('browsergym_set_of_marks') || null,
+      browsergym_visibility_ratio: element.getAttribute('browsergym_visibility_ratio') || null,
+      outerHTMLSnippet
+    };
+  }
+
   // Function to verify and log event capture
   function verifyEventCapture(event, type) {
     const currentTime = Date.now();
-    const element = event.target;
+    const { primary: resolvedTarget, original: originalTarget } = resolveEventTarget(event.target);
+    const element = resolvedTarget || originalTarget || event.target;
     
     // Enhanced logging for click events
     if (type === EVENT_TYPES.CLICK) {
@@ -533,15 +716,18 @@
   function validateEventCapture(event, type) {
     if (!testMode.enabled) return;
 
+    const { primary: resolvedTarget, original: originalTarget } = resolveEventTarget(event.target);
+    const element = resolvedTarget || originalTarget || event.target;
+
     const validation = {
       timestamp: Date.now(),
       type: type,
       element: {
-        tag: event.target.tagName,
-        id: event.target.id,
-        class: event.target.className,
-        text: event.target.textContent.trim().substring(0, 50),
-        value: event.target.value || ''
+        tag: element.tagName,
+        id: element.id,
+        class: element.className,
+        text: element.textContent.trim().substring(0, 50),
+        value: element.value || ''
       },
       url: window.location.href,
       verified: false
@@ -584,33 +770,46 @@
   // Enhanced function to record an event
   function recordEvent(event) {
     if (!isRecording) return;
+    if (enabledDomEventNames && !enabledDomEventNames.has(event.type)) {
+      console.debug(`Ignoring DOM event '${event.type}' because it is disabled in configuration.`);
+      return;
+    }
+
+    if (shouldIgnoreEvent(event, event.type)) {
+      return;
+    }
+
+    const { primary: targetElement, original: originalTarget } = resolveEventTarget(event.target);
+    const metadataElement = targetElement || originalTarget;
+
+    if (!metadataElement) {
+      console.warn('Unable to resolve a target element for event:', event.type);
+      return;
+    }
+
+    const targetMetadata = buildTargetMetadata(metadataElement);
+    if (!targetMetadata) {
+      console.warn('Failed to build metadata for event target:', metadataElement);
+      return;
+    }
     
     // Create event object with BrowserGym-like structure
     const eventData = {
       type: event.type,
       timestamp: Date.now(),
       url: window.location.href,
-      target: {
-        tag: event.target.tagName,
-        id: event.target.id,
-        class: event.target.className,
-        text: event.target.textContent,
-        value: event.target.value,
-        isInteractive: isInteractiveElement(event.target),
-        xpath: getElementXPath(event.target),
-        cssPath: getElementCssPath(event.target),
-        bid: getStableBID(event.target),
-        a11y: getA11yIdentifiers(event.target),
-        attributes: Array.from(event.target.attributes).reduce((acc, attr) => {
-          acc[attr.name] = attr.value;
-          return acc;
-        }, {}),
-        boundingBox: event.target.getBoundingClientRect().toJSON(),
-        // BrowserGym-specific attributes
-        browsergym_set_of_marks: event.target.getAttribute('browsergym_set_of_marks') || null,
-        browsergym_visibility_ratio: event.target.getAttribute('browsergym_visibility_ratio') || null
-      }
+      target: targetMetadata
     };
+
+    if (originalTarget && originalTarget !== metadataElement) {
+      eventData.originalTarget = {
+        tag: originalTarget.tagName,
+        id: originalTarget.id,
+        class: originalTarget.className,
+        cssPath: getElementCssPath(originalTarget),
+        xpath: getElementXPath(originalTarget)
+      };
+    }
 
     // Add event-specific data
     if (event.type === 'click') {
@@ -633,22 +832,87 @@
       eventData.detail = event.detail; // For double clicks
     }
 
+    if (event.type === EVENT_TYPES.POINTER_DOWN || event.type === EVENT_TYPES.POINTER_UP || event.type === EVENT_TYPES.POINTER_MOVE) {
+      eventData.pointerType = event.pointerType;
+      eventData.pointerId = event.pointerId;
+      eventData.isPrimary = event.isPrimary;
+      eventData.pressure = event.pressure;
+      eventData.tiltX = event.tiltX;
+      eventData.tiltY = event.tiltY;
+      eventData.twist = event.twist;
+      eventData.width = event.width;
+      eventData.height = event.height;
+    }
+
+    if (event.type === EVENT_TYPES.KEY_DOWN || event.type === EVENT_TYPES.KEY_UP || event.type === EVENT_TYPES.KEY_PRESS) {
+      eventData.key = event.key;
+      eventData.code = event.code;
+      eventData.keyCode = event.keyCode;
+      eventData.location = event.location;
+      eventData.repeat = event.repeat;
+      eventData.modifierState = {
+        ctrl: event.ctrlKey,
+        alt: event.altKey,
+        shift: event.shiftKey,
+        meta: event.metaKey,
+        capsLock: event.getModifierState ? event.getModifierState('CapsLock') : false
+      };
+    }
+
+    if (event.type === EVENT_TYPES.INPUT || event.type === EVENT_TYPES.CHANGE) {
+      eventData.inputType = event.inputType;
+      eventData.data = event.data;
+      eventData.dataTransfer = event.dataTransfer ? {
+        types: Array.from(event.dataTransfer.types || []),
+        files: event.dataTransfer.files ? event.dataTransfer.files.length : 0
+      } : null;
+
+      const activeElement = metadataElement;
+      if (activeElement && typeof activeElement.selectionStart === 'number') {
+        eventData.selectionStart = activeElement.selectionStart;
+        eventData.selectionEnd = activeElement.selectionEnd;
+        eventData.selectionDirection = activeElement.selectionDirection || null;
+      }
+    }
+
+    if (event.type === EVENT_TYPES.SCROLL) {
+      const target = metadataElement === document.documentElement ? document.scrollingElement || document.documentElement : metadataElement;
+      if (target) {
+        eventData.scroll = {
+          scrollTop: target.scrollTop,
+          scrollLeft: target.scrollLeft,
+          scrollHeight: target.scrollHeight,
+          scrollWidth: target.scrollWidth,
+          clientHeight: target.clientHeight,
+          clientWidth: target.clientWidth
+        };
+      }
+      if (typeof event.deltaY === 'number' || typeof event.deltaX === 'number') {
+        eventData.delta = {
+          deltaX: event.deltaX,
+          deltaY: event.deltaY,
+          deltaMode: event.deltaMode
+        };
+      }
+    }
+
     // Send event to background script
     chrome.runtime.sendMessage({ type: 'recordedEvent', event: eventData });
 
     // Also store locally for verification
     events.push(eventData);
+    saveEvents();
 
     // Log click events for debugging
     if (event.type === 'click') {
       console.log('Click recorded:', {
         type: event.type,
         target: {
-          tag: event.target.tagName,
-          id: event.target.id,
-          class: event.target.className,
-          text: event.target.textContent.trim().substring(0, 50),
-          isInteractive: isInteractiveElement(event.target),
+          tag: metadataElement.tagName,
+          id: metadataElement.id,
+          class: metadataElement.className,
+          text: metadataElement.textContent.trim().substring(0, 50),
+          isInteractive: isInteractiveElement(metadataElement),
           bid: eventData.target.bid
         },
         position: {
@@ -822,11 +1086,13 @@
     currentTaskId = taskId;
     events = existingEvents;
 
+    // Critical listeners are pre-attached on script load to avoid race conditions
+
     if (clearCache) {
       cachedEventConfig = null;
     }
 
-    // Initialize event listeners immediately
+    // Initialize full configurable listeners as soon as DOM is ready
     if (document.readyState === 'complete' || document.readyState === 'interactive') {
       initializeRecording();
     } else {
@@ -853,17 +1119,6 @@
       }
     })();
 
-    // Record page load event for resumed sessions (after navigation)
-    if (isResuming) {
-      const pageLoadEvent = {
-        type: EVENT_TYPES.PAGE_LOAD,
-        timestamp: Date.now(),
-        url: window.location.href,
-        title: document.title
-      };
-      events.push(pageLoadEvent);
-      saveEvents();
-    }
   }
 
   // Check if we should be recording when script loads (handles navigation during recording)
@@ -927,10 +1182,17 @@
       detachNavigationListeners();
 
       const enabledDomEvents = (config.domEvents || []).filter(evt => evt && evt.enabled !== false);
+      enabledDomEventNames = new Set(enabledDomEvents.map(evt => evt.name));
+      console.log('Enabled DOM events:', Array.from(enabledDomEventNames));
       enabledDomEvents.forEach(({ name, handler }) => {
         const resolvedHandler = getHandlerByKey(handler);
         if (!resolvedHandler) {
           console.warn(`No handler resolved for event '${name}' (key: ${handler}).`);
+          return;
+        }
+        // Skip adding if a critical listener for this event is already attached
+        if (criticalDomListeners.has(name)) {
+          console.log(`Skipping ${name} — already handled by critical listener`);
           return;
         }
         document.addEventListener(name, resolvedHandler, true);
@@ -939,6 +1201,8 @@
       });
 
       const enabledNavigationEvents = (config.navigationEvents || []).filter(evt => evt && evt.enabled !== false);
+      enabledNavigationEventNames = new Set(enabledNavigationEvents.map(evt => evt.name));
+      console.log('Enabled navigation events:', Array.from(enabledNavigationEventNames));
       enabledNavigationEvents.forEach(({ name }) => {
         const handler = NAVIGATION_HANDLER_MAP[name];
         if (!handler) {
@@ -1052,16 +1316,6 @@
         existingEvents: existingEvents,
         clearCache: true  // Clear config cache for new recordings
       });
-      
-      // Record initial page load as an event (for new recordings)
-      const pageLoadEvent = {
-        type: EVENT_TYPES.PAGE_LOAD,
-        timestamp: Date.now(),
-        url: window.location.href,
-        title: document.title
-      };
-      events.push(pageLoadEvent);
-      saveEvents();
     });
   }
 
@@ -1099,6 +1353,10 @@
           
           // Save the updated task history
           chrome.storage.local.set({ taskHistory: taskHistory }, function() {
+            if (chrome.runtime.lastError) {
+              console.error("Events failed to save:", chrome.runtime.lastError);
+              return;
+            }
             console.log("Events saved to task history");
           });
         }
@@ -1120,6 +1378,14 @@
           
           // Save the updated task history
           chrome.storage.local.set({ taskHistory: taskHistory }, function() {
+            if (chrome.runtime.lastError) {
+              console.error("Events failed to save:", chrome.runtime.lastError);
+              recoveryState.errorCount++;
+              if (recoveryState.errorCount >= recoveryState.maxErrors) {
+                attemptRecovery();
+              }
+              return;
+            }
             console.log("Events saved to task history");
             recoveryState.lastSavedTimestamp = Date.now();
             recoveryState.errorCount = 0;
@@ -1145,7 +1411,7 @@
     const previousUrl = navigationState.lastUrl || document.referrer;
     
     if (currentUrl !== previousUrl) {
-      recordNavigationEvent(previousUrl, currentUrl);
+      recordNavigationEvent(previousUrl, currentUrl, event?.type);
     }
   }
 
@@ -1189,11 +1455,23 @@
   }
 
   // Enhanced function to record navigation events
-  function recordNavigationEvent(fromUrl, toUrl, type = EVENT_TYPES.NAVIGATION) {
+  function recordNavigationEvent(fromUrl, toUrl, rawType) {
     if (!isRecording) return;
 
+    let eventType = rawType || EVENT_TYPES.NAVIGATION;
+    if (enabledNavigationEventNames) {
+      if (enabledNavigationEventNames.has(eventType)) {
+        // ok
+      } else if (!rawType && enabledNavigationEventNames.has(EVENT_TYPES.NAVIGATION)) {
+        eventType = EVENT_TYPES.NAVIGATION;
+      } else {
+        console.debug(`Ignoring navigation event '${eventType}' because it is disabled in configuration.`);
+        return;
+      }
+    }
     const eventData = {
-      type: type,
+      type: eventType,
+      category: EVENT_TYPES.NAVIGATION,
       timestamp: formatTimestamp(Date.now()),
       fromUrl: fromUrl,
       toUrl: toUrl,
@@ -1203,6 +1481,12 @@
     };
 
     events.push(eventData);
+    eventVerification.navigations.push({
+      time: Date.now(),
+      type: eventType,
+      fromUrl,
+      toUrl
+    });
     saveEvents();
     
     // Update navigation state
@@ -1215,6 +1499,7 @@
 
     // Log navigation event
     console.log(`Navigation recorded:`, {
+      type: eventType,
       from: fromUrl,
       to: toUrl,
       userInitiated: clickState.clickCount > 0,
