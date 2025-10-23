@@ -9,10 +9,16 @@ async function startRecording() {
   recordedChunks = [];
   startedAtMs = Date.now();
   try {
+    // Check if getDisplayMedia is available
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      throw new Error('getDisplayMedia is not supported in this browser or context');
+    }
+    
     stream = await navigator.mediaDevices.getDisplayMedia({
       video: { displaySurface: 'monitor', frameRate: 30 },
       audio: false
     });
+    
     // Add fallback for browsers that don't support vp9
     let mimeType = 'video/webm;codecs=vp9';
     if (!MediaRecorder.isTypeSupported(mimeType)) {
@@ -34,8 +40,29 @@ async function startRecording() {
     mediaRecorder.start(250); // small timeslice for reliability
     chrome.runtime.sendMessage({ type: 'OFFSCREEN_STARTED', startedAtMs });
   } catch (e) {
-    console.error('getDisplayMedia failed', e);
-    throw e;
+    console.error('getDisplayMedia failed:', {
+      name: e.name,
+      message: e.message,
+      stack: e.stack
+    });
+    
+    // Provide more helpful error messages
+    let errorMessage = 'Screen recording failed: ';
+    if (e.name === 'NotAllowedError') {
+      errorMessage += 'Permission denied. Please allow screen sharing when prompted.';
+    } else if (e.name === 'NotFoundError') {
+      errorMessage += 'No screen sharing source was selected.';
+    } else if (e.name === 'NotSupportedError') {
+      errorMessage += 'Screen recording is not supported in this browser.';
+    } else if (e.name === 'SecurityError') {
+      errorMessage += 'Screen recording blocked due to security restrictions.';
+    } else {
+      errorMessage += e.message || 'Unknown error occurred.';
+    }
+    
+    const detailedError = new Error(errorMessage);
+    detailedError.originalError = e;
+    throw detailedError;
   }
 }
 

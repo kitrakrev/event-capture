@@ -24,13 +24,23 @@ const API_BASE = (typeof API_ENDPOINT !== 'undefined' && API_ENDPOINT)
 const API_KEY_HEADER = (typeof API_KEY !== 'undefined' && API_KEY) ? { 'x-api-key': API_KEY } : {};
 
 async function ensureOffscreenDocument() {
-  const has = await chrome.offscreen.hasDocument?.();
-  if (has) return;
-  await chrome.offscreen.createDocument({
-    url: 'offscreen.html',
-    reasons: ['USER_MEDIA'],
-    justification: 'Record whole screen during task' // Required by Chrome
-  });
+  try {
+    const has = await chrome.offscreen.hasDocument?.();
+    if (has) {
+      console.log('Offscreen document already exists');
+      return;
+    }
+    console.log('Creating offscreen document for screen recording...');
+    await chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: ['DISPLAY_MEDIA'],  // For getDisplayMedia/screen capture
+      justification: 'Record whole screen during task'
+    });
+    console.log('Offscreen document created successfully');
+  } catch (e) {
+    console.error('Failed to create offscreen document:', e);
+    throw new Error(`Offscreen document creation failed: ${e.message}`);
+  }
 }
 
 async function startScreenRecording() {

@@ -44,19 +44,19 @@
     },
     {
       "name": "keydown",
-      "enabled": false,
+      "enabled": true,
       "handler": "recordEvent",
       "description": "Key pressed down"
     },
     {
       "name": "keyup",
-      "enabled": false,
+      "enabled": true,
       "handler": "recordEvent",
       "description": "Key released"
     },
     {
       "name": "keypress",
-      "enabled": false,
+      "enabled": true,
       "handler": "recordEvent",
       "description": "Printable key pressed"
     },

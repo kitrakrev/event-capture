@@ -228,14 +228,42 @@ document.getElementById('startTask').addEventListener('click', async () => {
       return;
     }
 
-    // Inject content script to record user actions
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ['recorder.js']
+    // Always inject the latest content script, then robust start handshake
+    try {
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['recorder.js'] });
+      await new Promise(r => setTimeout(r, 100));
+    } catch (e) {
+      console.warn('Initial recorder injection failed (will retry if needed):', e);
+    }
+
+    // Robust start handshake: wait for ack; reinject once if needed
+    const sendStart = () => new Promise(resolve => {
+      let settled = false;
+      const t = setTimeout(() => { if (!settled) resolve(null); }, 800);
+      try {
+        chrome.tabs.sendMessage(tab.id, { action: "startRecording", taskId, startAtMs: startTime }, (resp) => {
+          clearTimeout(t);
+          settled = true;
+          resolve(resp);
+        });
+      } catch (_) {
+        clearTimeout(t);
+        resolve(null);
+      }
     });
-    
-    // Send message to start recording
-    chrome.tabs.sendMessage(tab.id, { action: "startRecording", taskId: taskId });
+
+    let ack = await sendStart();
+    if (!ack || ack.status !== 'recording started') {
+      console.warn('Recorder did not ack; attempting one reinjection...');
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['recorder.js'] });
+      await new Promise(r => setTimeout(r, 150));
+      ack = await sendStart();
+    }
+    if (!ack || ack.status !== 'recording started') {
+      console.warn('Recorder still not acknowledged. If events do not appear, refresh the page.');
+    } else {
+      console.log('Recording started ack:', ack);
+    }
   } catch (error) {
     console.error("Error starting recording:", error);
     alert("Error: " + error.message);

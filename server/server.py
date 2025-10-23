@@ -51,6 +51,8 @@ if EVENT_COLLECTION:
     ALLOWED_COLLECTIONS.add(EVENT_COLLECTION)
 
 client: Optional[MongoClient] = MongoClient(ATLAS_URI, serverSelectionTimeoutMS=5000) if ATLAS_URI else None
+DB_AVAILABLE: bool = False
+DB_LAST_ERROR: Optional[str] = None
 
 app = FastAPI(title="Atlas Data API Replacement", version="1.0.0")
 
@@ -97,11 +99,27 @@ async def verify_api_key(x_api_key: Optional[str] = Header(default=None)) -> Non
 
 @app.on_event("startup")
 async def startup_event() -> None:
-    """Verify configuration and Mongo connectivity on startup."""
+    """Verify configuration and attempt Mongo connectivity on startup.
+
+    If Mongo is unreachable (e.g., corporate SSL interception, offline, bad certs),
+    continue to start in local-only mode and persist payloads under `intermediate/`.
+    """
+    global DB_AVAILABLE, DB_LAST_ERROR
     require_configuration()
     if client is None:
-        raise RuntimeError("Mongo client not initialized")
-    client.admin.command("ping")
+        DB_AVAILABLE = False
+        DB_LAST_ERROR = "Mongo client not initialized"
+        print(f"[startup] Warning: {DB_LAST_ERROR}. Running in local-only mode.")
+        return
+    try:
+        client.admin.command("ping")
+        DB_AVAILABLE = True
+        DB_LAST_ERROR = None
+        print("[startup] MongoDB connectivity OK")
+    except Exception as exc:  # broad to catch SSL/TLS issues
+        DB_AVAILABLE = False
+        DB_LAST_ERROR = str(exc)
+        print(f"[startup] Warning: MongoDB unavailable ({DB_LAST_ERROR}). Running in local-only mode.")
 
 
 class EventPayload(BaseModel):
@@ -120,7 +138,6 @@ class EventPayload(BaseModel):
 async def ingest_events(payload: EventPayload) -> Dict[str, Any]:
     """Insert the payload into Mongo and mirror it to intermediate/<timestamp>."""
     try:
-        collection = get_collection(ALLOWED_DB, EVENT_COLLECTION)
         events_count = len(payload.data)
         document = {
             "task": payload.task,
@@ -133,7 +150,20 @@ async def ingest_events(payload: EventPayload) -> Dict[str, Any]:
             "video_server_path": payload.video_server_path,
             "timestamp": datetime.utcnow(),
         }
-        result = collection.insert_one(document)
+
+        inserted_id: Optional[ObjectId] = None
+        mongo_ok = False
+        mongo_error: Optional[str] = None
+        if client is not None and DB_AVAILABLE:
+            try:
+                collection = get_collection(ALLOWED_DB, EVENT_COLLECTION)
+                result = collection.insert_one(document)
+                inserted_id = result.inserted_id
+                mongo_ok = True
+            except PyMongoError as exc:
+                mongo_error = str(exc)
+        else:
+            mongo_error = DB_LAST_ERROR or "database not available"
 
         # Also write payload and metadata to root-level intermediate/<timestamp>
         try:
@@ -154,7 +184,7 @@ async def ingest_events(payload: EventPayload) -> Dict[str, Any]:
             }
             metadata_json = {
                 "savedAt": datetime.utcnow().isoformat(),
-                "mongo": {"insertedId": str(result.inserted_id)},
+                "mongo": {"insertedId": str(inserted_id) if inserted_id else None, "ok": mongo_ok, "error": mongo_error},
                 "counts": {"events": len(document["data"])},
                 "paths": {
                     "payload": str((folder / "payload.json").resolve()),
@@ -168,7 +198,7 @@ async def ingest_events(payload: EventPayload) -> Dict[str, Any]:
             # Non-fatal: log and continue
             print(f"Failed writing intermediate files: {file_err}")
 
-        return {"success": True, "documentId": str(result.inserted_id), "folderIso": iso}
+        return {"success": True, "documentId": str(inserted_id) if inserted_id else None, "folderIso": iso, "mongo": {"ok": mongo_ok, "error": mongo_error}}
     except PyMongoError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
