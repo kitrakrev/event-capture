@@ -7,7 +7,6 @@
 // - On tab updates: injects `recorder.js` when the recording tab navigates.
 // - On messages from `recorder.js`: appends events to the active task history.
 // - Handles UI actions: open detailed view, export a task to JSON, delete a task.
-// - Records high-level events (navigation, new tab) while recording is active.
 
 // Screen recording state
 let videoRecording = {
@@ -25,13 +24,23 @@ const API_BASE = (typeof API_ENDPOINT !== 'undefined' && API_ENDPOINT)
 const API_KEY_HEADER = (typeof API_KEY !== 'undefined' && API_KEY) ? { 'x-api-key': API_KEY } : {};
 
 async function ensureOffscreenDocument() {
-  const has = await chrome.offscreen.hasDocument?.();
-  if (has) return;
-  await chrome.offscreen.createDocument({
-    url: 'offscreen.html',
-    reasons: ['USER_MEDIA'],
-    justification: 'Record whole screen during task' // Required by Chrome
-  });
+  try {
+    const has = await chrome.offscreen.hasDocument?.();
+    if (has) {
+      console.log('Offscreen document already exists');
+      return;
+    }
+    console.log('Creating offscreen document for screen recording...');
+    await chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: ['DISPLAY_MEDIA'],  // For getDisplayMedia/screen capture
+      justification: 'Record whole screen during task'
+    });
+    console.log('Offscreen document created successfully');
+  } catch (e) {
+    console.error('Failed to create offscreen document:', e);
+    throw new Error(`Offscreen document creation failed: ${e.message}`);
+  }
 }
 
 async function startScreenRecording() {
@@ -319,6 +328,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       },
       timestamp: new Date(message.event.timestamp).toISOString()
     });
+    try { sendResponse?.({ ok: true }); } catch (e) {}
     
     // Get current task info
     chrome.storage.local.get(['isRecording', 'currentTaskId', 'taskHistory', 'videoStartedAtMs'], (data) => {
@@ -480,7 +490,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
   }
   
-  return true; // Required for async sendResponse
+  return true; // Keep port open for async branches
 });
 
 // Listen for tab updates (including URL changes)
@@ -490,42 +500,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     chrome.storage.local.get(['isRecording', 'recordingTabId', 'currentTaskId', 'taskHistory', 'videoStartedAtMs'], (data) => {
       if (data.isRecording && data.recordingTabId === tabId && data.currentTaskId) {
         console.log("Navigation detected in recording tab:", tab.url);
-        
-        // Create navigation event
-        const navigationEvent = {
-          type: 'navigation',
-          toUrl: tab.url,
-          timestamp: Date.now(),
-          title: tab.title || '',
-          fromUserInput: changeInfo.url ? true : false // Best guess if it was from URL bar
-        };
-        
-        // Save to task history
-        if (data.taskHistory && data.currentTaskId) {
-          const taskHistory = data.taskHistory;
-          const taskId = data.currentTaskId;
-          
-          if (taskHistory[taskId]) {
-            const events = taskHistory[taskId].events || [];
-            // Align navigation relative time if available
-            let relative = null;
-            if (videoRecording.startedAtMs || data.videoStartedAtMs) {
-              const base = videoRecording.startedAtMs || data.videoStartedAtMs;
-              relative = Math.max(0, Number(navigationEvent.timestamp) - Number(base));
-            }
-            const navWithRelative = relative != null ? { 
-              ...navigationEvent, 
-              videoTimeMs: relative, 
-              video_timestamp: relative,
-              video_event_start_ms: relative,
-              video_event_end_ms: relative
-            } : navigationEvent;
-            events.push(navWithRelative);
-            taskHistory[taskId].events = events;
-            
-            chrome.storage.local.set({ taskHistory: taskHistory });
-          }
-        }
         
         // Inject recorder script into the new page
         chrome.scripting.executeScript({
@@ -544,26 +518,6 @@ chrome.tabs.onCreated.addListener((tab) => {
       // Update the recording tab ID to the new tab
       chrome.storage.local.set({ recordingTabId: tab.id });
       
-      // Record tab creation event
-      const tabEvent = {
-        type: 'newTab',
-        timestamp: Date.now(),
-        tabId: tab.id
-      };
-      
-      // Save to task history
-      if (data.taskHistory && data.currentTaskId) {
-        const taskHistory = data.taskHistory;
-        const taskId = data.currentTaskId;
-        
-        if (taskHistory[taskId]) {
-          const events = taskHistory[taskId].events || [];
-          events.push(tabEvent);
-          taskHistory[taskId].events = events;
-          
-          chrome.storage.local.set({ taskHistory: taskHistory });
-        }
-      }
     }
   });
 });

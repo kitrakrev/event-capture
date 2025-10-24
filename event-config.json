@@ -4,149 +4,140 @@
       "name": "click",
       "enabled": true,
       "handler": "recordEvent",
-      "description": "Mouse click interactions",
-      "screenshot": false
+      "description": "Mouse click interactions"
     },
     {
       "name": "mousedown",
-      "enabled": true,
+      "enabled": false,
       "handler": "recordEvent",
-      "description": "Mouse button press",
-      "screenshot": false
+      "description": "Mouse button press"
     },
     {
       "name": "mouseup",
-      "enabled": true,
+      "enabled": false,
       "handler": "recordEvent",
-      "description": "Mouse button release",
-      "screenshot": false
+      "description": "Mouse button release"
+    },
+    {
+      "name": "pointerdown",
+      "enabled": false,
+      "handler": "recordEvent",
+      "description": "Pointer down (mouse, pen, touch)"
+    },
+    {
+      "name": "pointerup",
+      "enabled": false,
+      "handler": "recordEvent",
+      "description": "Pointer up (mouse, pen, touch)"
     },
     {
       "name": "mouseover",
-      "enabled": true,
+      "enabled": false,
       "handler": "recordEvent",
-      "description": "Pointer enters element",
-      "screenshot": false
+      "description": "Pointer enters element"
     },
     {
       "name": "mouseout",
-      "enabled": true,
+      "enabled": false,
       "handler": "recordEvent",
-      "description": "Pointer leaves element",
-      "screenshot": false
+      "description": "Pointer leaves element"
     },
     {
       "name": "keydown",
       "enabled": true,
       "handler": "recordEvent",
-      "description": "Key pressed down",
-      "screenshot": false
+      "description": "Key pressed down"
     },
     {
       "name": "keyup",
       "enabled": true,
       "handler": "recordEvent",
-      "description": "Key released",
-      "screenshot": false
+      "description": "Key released"
     },
     {
       "name": "keypress",
       "enabled": true,
       "handler": "recordEvent",
-      "description": "Printable key pressed",
-      "screenshot": false
+      "description": "Printable key pressed"
     },
     {
       "name": "scroll",
-      "enabled": true,
+      "enabled": false,
       "handler": "debouncedRecordScroll",
-      "description": "Page or element scrolling",
-      "screenshot": false
+      "description": "Page or element scrolling"
     },
     {
       "name": "input",
       "enabled": true,
       "handler": "debouncedRecordInput",
-      "description": "Input value changes",
-      "screenshot": false
+      "description": "Input value changes"
     },
     {
       "name": "change",
       "enabled": true,
       "handler": "debouncedRecordInput",
-      "description": "Committed value change",
-      "screenshot": false
+      "description": "Committed value change"
     },
     {
       "name": "focus",
-      "enabled": true,
+      "enabled": false,
       "handler": "recordEvent",
-      "description": "Element focus",
-      "screenshot": false
+      "description": "Element focus"
     },
     {
       "name": "blur",
-      "enabled": true,
+      "enabled": false,
       "handler": "recordEvent",
-      "description": "Element blur",
-      "screenshot": false
+      "description": "Element blur"
     },
     {
       "name": "submit",
       "enabled": true,
       "handler": "recordEvent",
-      "description": "Form submission",
-      "screenshot": false
+      "description": "Form submission"
     },
     {
       "name": "touchstart",
-      "enabled": true,
+      "enabled": false,
       "handler": "recordEvent",
-      "description": "Touch start (mobile)",
-      "screenshot": false
+      "description": "Touch start (mobile)"
     },
     {
       "name": "touchend",
-      "enabled": true,
+      "enabled": false,
       "handler": "recordEvent",
-      "description": "Touch end (mobile)",
-      "screenshot": false
+      "description": "Touch end (mobile)"
     },
     {
       "name": "touchmove",
-      "enabled": true,
+      "enabled": false,
       "handler": "recordEvent",
-      "description": "Touch move (mobile)",
-      "screenshot": false
+      "description": "Touch move (mobile)"
     }
   ],
   "navigationEvents": [
     {
       "name": "popstate",
       "enabled": true,
-      "description": "Browser back/forward",
-      "screenshot": false
+      "description": "Browser back/forward"
     },
     {
       "name": "pushState",
       "enabled": true,
-      "description": "SPA route changes",
-      "screenshot": false
+      "description": "SPA route changes"
     },
     {
       "name": "replaceState",
       "enabled": true,
-      "description": "SPA history replacement",
-      "screenshot": false
+      "description": "SPA history replacement"
     },
     {
       "name": "beforeunload",
       "enabled": true,
-      "description": "Page unload warning",
-      "screenshot": false
+      "description": "Page unload warning"
     }
   ],
   "observers": {
-    "dynamicDom": true
+    "dynamicDom": false
   }
 }

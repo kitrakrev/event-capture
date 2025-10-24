@@ -16,25 +16,6 @@ function checkStorage() {
   });
 }
 
-// Call it when popup opens
-document.addEventListener('DOMContentLoaded', async () => {
-  console.log("Popup opened");
-  checkStorage();
-  
-  chrome.storage.local.get(['isRecording', 'recordingStartTime'], (data) => {
-    if (data.isRecording) {
-      // We're already recording, update UI
-      document.getElementById('startTask').disabled = true;
-      document.getElementById('endTask').disabled = false;
-      
-      // Start timer
-      if (data.recordingStartTime) {
-        startTimer(data.recordingStartTime);
-      }
-    }
-  });
-});
-
 // Add timer element
 const timerElement = document.createElement('div');
 timerElement.id = 'timer';
@@ -48,19 +29,6 @@ const mainPushButton = document.getElementById('pushToMongo');
 let lastCompletedTaskId = null;
 const taskDescriptionInput = document.getElementById('taskDescription');
 const TASK_TITLE_STORAGE_KEY = 'taskTitleDraft';
-
-if (taskDescriptionInput) {
-  chrome.storage.local.get([TASK_TITLE_STORAGE_KEY], (data) => {
-    const storedTitle = data[TASK_TITLE_STORAGE_KEY];
-    if (typeof storedTitle === 'string') {
-      taskDescriptionInput.value = storedTitle;
-    }
-  });
-
-  taskDescriptionInput.addEventListener('input', () => {
-    chrome.storage.local.set({ [TASK_TITLE_STORAGE_KEY]: taskDescriptionInput.value });
-  });
-}
 
 function startTimer(startTime) {
   const updateTimer = () => {
@@ -76,6 +44,20 @@ function startTimer(startTime) {
   // Update immediately and then every second
   updateTimer();
   timerInterval = setInterval(updateTimer, 1000);
+}
+
+// Initialize task description input
+if (taskDescriptionInput) {
+  chrome.storage.local.get([TASK_TITLE_STORAGE_KEY], (data) => {
+    const storedTitle = data[TASK_TITLE_STORAGE_KEY];
+    if (typeof storedTitle === 'string') {
+      taskDescriptionInput.value = storedTitle;
+    }
+  });
+
+  taskDescriptionInput.addEventListener('input', () => {
+    chrome.storage.local.set({ [TASK_TITLE_STORAGE_KEY]: taskDescriptionInput.value });
+  });
 }
 
 async function pushTaskToMongo(taskData, buttonElement) {
@@ -246,14 +228,42 @@ document.getElementById('startTask').addEventListener('click', async () => {
       return;
     }
 
-    // Inject content script to record user actions
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ['recorder.js']
+    // Always inject the latest content script, then robust start handshake
+    try {
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['recorder.js'] });
+      await new Promise(r => setTimeout(r, 100));
+    } catch (e) {
+      console.warn('Initial recorder injection failed (will retry if needed):', e);
+    }
+
+    // Robust start handshake: wait for ack; reinject once if needed
+    const sendStart = () => new Promise(resolve => {
+      let settled = false;
+      const t = setTimeout(() => { if (!settled) resolve(null); }, 800);
+      try {
+        chrome.tabs.sendMessage(tab.id, { action: "startRecording", taskId, startAtMs: startTime }, (resp) => {
+          clearTimeout(t);
+          settled = true;
+          resolve(resp);
+        });
+      } catch (_) {
+        clearTimeout(t);
+        resolve(null);
+      }
     });
-    
-    // Send message to start recording
-    chrome.tabs.sendMessage(tab.id, { action: "startRecording", taskId: taskId });
+
+    let ack = await sendStart();
+    if (!ack || ack.status !== 'recording started') {
+      console.warn('Recorder did not ack; attempting one reinjection...');
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['recorder.js'] });
+      await new Promise(r => setTimeout(r, 150));
+      ack = await sendStart();
+    }
+    if (!ack || ack.status !== 'recording started') {
+      console.warn('Recorder still not acknowledged. If events do not appear, refresh the page.');
+    } else {
+      console.log('Recording started ack:', ack);
+    }
   } catch (error) {
     console.error("Error starting recording:", error);
     alert("Error: " + error.message);
@@ -501,7 +511,23 @@ function addTaskHistoryButton() {
 }
 
 // Call this function when the popup is loaded
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
+  console.log("Popup opened");
+  checkStorage();
+  
+  chrome.storage.local.get(['isRecording', 'recordingStartTime'], (data) => {
+    if (data.isRecording) {
+      // We're already recording, update UI
+      document.getElementById('startTask').disabled = true;
+      document.getElementById('endTask').disabled = false;
+      
+      // Start timer
+      if (data.recordingStartTime) {
+        startTimer(data.recordingStartTime);
+      }
+    }
+  });
+  
   if (mainPushButton) {
     mainPushButton.disabled = true;
   }
