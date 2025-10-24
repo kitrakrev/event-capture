@@ -1528,25 +1528,6 @@
     }
   }
 
-    function captureAxTree(navigationTimestamp) {
-    if (!isRecording) return;
-    
-    const axTreeRequestData = {
-      navigationTimestamp: navigationTimestamp,
-      captureTimestamp: Date.now(),
-      url: window.location.href,
-      title: document.title
-    };
-    
-    chrome.runtime.sendMessage({ 
-      type: 'requestAxTree', 
-      data: axTreeRequestData 
-    });
-    
-    console.log('Accessibility tree capture requested for:', window.location.href);
-  }
-  
-
   // Function to handle navigation events
   function handleNavigation(event) {
     if (!isRecording) return;

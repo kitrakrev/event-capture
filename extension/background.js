@@ -355,17 +355,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             video_event_end_ms: relative
           } : message.event;
 
-          const eventWithDetails = {
-            ...eventWithRelative,
-            captureTimestamp: Date.now(),
-            url: window.location.href,
-            title: document.title,
-            html: document.documentElement.outerHTML,
-            characterSet: document.characterSet,
-            readyState: document.readyState
-          };
-
-          events.push(eventWithDetails);
+          events.push(eventWithRelative);
           taskHistory[taskId].events = events;          
           
           // Save updated task history
