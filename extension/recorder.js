@@ -471,11 +471,11 @@
     }
 
     // Handle mouse hover events - only record for interactive elements or tooltips
-    // if (type === EVENT_TYPES.MOUSE_OVER || type === EVENT_TYPES.MOUSE_OUT) {
-    //     if (!isInteractiveElement(element) && !element.hasAttribute('title')) {
-    //         return true; // Ignore hovering over regular text
-    //     }
-    // }
+    if (type === EVENT_TYPES.MOUSE_OVER || type === EVENT_TYPES.MOUSE_OUT) {
+        if (!isInteractiveElement(element) && !element.hasAttribute('title')) {
+            return true; // Ignore hovering over regular text
+        }
+    }
 
     // Check for duplicate events within a short time window
     if (type !== EVENT_TYPES.CLICK &&
