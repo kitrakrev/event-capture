@@ -12,14 +12,25 @@
 
 // We wrap everything in an IIFE (Immediately Invoked Function Expression) 
 
-let lastHtmlCapture = 0;
-let isNewPageLoad = true;
-let HTMLCOOLDOWN = 3000;
-let htmlCaptureLocked = false;
+
 
 
 (function() {
 
+  // Prevent re-injection for new recording sessions
+  if (window.taskRecorderInitialized) {
+    console.log("Recorder script re-injected, skipping");
+    return;
+  } 
+
+  window.taskRecorderInitialized = true;
+  console.log("Recorder script loaded and initialized");
+
+
+  let lastHtmlCapture = 0;
+  let isNewPageLoad = true;
+  let HTMLCOOLDOWN = 3000;
+  let htmlCaptureLocked = false;
 
   function requestHtmlCapture(eventTimestamp) {
     if (htmlCaptureLocked) {
@@ -39,14 +50,6 @@ let htmlCaptureLocked = false;
     htmlCaptureLocked = false;
   }
 
-  // Allow re-injection for new recording sessions
-  // Instead of blocking entirely, we'll check during specific operations
-  if (window.taskRecorderInitialized) {
-    console.log("Recorder script re-injected, allowing re-initialization");
-  } else {
-    window.taskRecorderInitialized = true;
-    console.log("Recorder script loaded and initialized");
-  }
 
   // Private variables within this closure
   let events = [];
@@ -362,28 +365,18 @@ let htmlCaptureLocked = false;
 
   function captureHtml(eventTimestamp) {
     console.log('XXXXX approved html capture')
-    // const currentHtml = document.documentElement.outerHTML;
+    const currentHtml = document.documentElement.outerHTML;
     
-    // Send the captured HTML to the background script
-    chrome.runtime.sendMessage({ type: 'htmlCapture',
+    chrome.runtime.sendMessage({ 
+      type: 'htmlCapture', 
       event: {
-        html: '',
+        html: currentHtml,
         type: 'htmlCapture',
-        eventTimestamp: 0,
+        eventTimestamp: eventTimestamp,
         timestamp: Date.now(),
-        url: ''
+        url: window.location.href
       } 
-    });      
-    // chrome.runtime.sendMessage({ 
-    //   type: 'htmlCapture', 
-    //   data: {
-    //     html: currentHtml,
-    //     type: 'htmlCapture',
-    //     eventTimestamp: eventTimestamp,
-    //     timestamp: Date.now(),
-    //     url: window.location.href
-    //   } 
-    // });
+    });
   }
 
   // document.addEventListener('DOMContentLoaded', function() {
@@ -462,7 +455,6 @@ let htmlCaptureLocked = false;
     // Handle input events - we only care about actual changes
     if (type === EVENT_TYPES.INPUT) {
         // Skip if the value hasn't changed
-        console.log('attempting to log input')
         if (currentValue === lastEventData.lastInputValue) {
             return true;
         }
@@ -907,15 +899,16 @@ let htmlCaptureLocked = false;
       console.debug(`🚫 Event ${event.type} not recorded - isRecording is false`);
       return;
     }
+
     if (enabledDomEventNames && !enabledDomEventNames.has(event.type)) {
       console.debug(`Ignoring DOM event '${event.type}' because it is disabled in configuration.`);
       return;
     }
-    console.log(`📝 Recording event: ${event.type}`);
 
     if (shouldIgnoreEvent(event, event.type)) {
       return;
     }
+    console.log(`📝 Recording event: ${event.type}`);
 
     const { primary: targetElement, original: originalTarget } = resolveEventTarget(event.target);
     const metadataElement = targetElement || originalTarget;
