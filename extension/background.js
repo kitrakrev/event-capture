@@ -315,94 +315,93 @@ async function uploadVideoBlob(folderIso, blob) {
   }
 }
 
+
+// queue for events that need to be committed to task history
+// trying to avoid race conditions
+const eventQueue = {
+  queue: [],
+  processing: false,
+  
+  enqueue: function(operation) {
+    this.queue.push(operation);
+    if (!this.processing) {
+      this.processNext();
+    }
+  },
+  
+  processNext: function() {
+    if (this.queue.length === 0) {
+      this.processing = false;
+      return;
+    }
+    
+    this.processing = true;
+    const nextOperation = this.queue.shift();
+    
+    try {
+      nextOperation(this.onOperationComplete.bind(this));
+    } catch (error) {
+      console.error('Queue operation error:', error);
+      this.onOperationComplete();
+    }
+  },
+  
+  onOperationComplete: function() {
+    this.processNext();
+  }
+};
+
+function addRelativeRecordingTimestampToEvent(eventData) {
+  let relative = null;
+  if (videoRecording.startedAtMs || data.videoStartedAtMs) {
+    const base = videoRecording.startedAtMs || data.videoStartedAtMs;
+    relative = Math.max(0, Number(eventData.timestamp) - Number(base));
+  }
+  // Add exact video timestamp key as requested
+  const dataWithRelative = relative != null ? { 
+    ...eventData, 
+    videoTimeMs: relative, 
+    video_timestamp: relative,
+    video_event_start_ms: relative,
+    video_event_end_ms: relative
+  } : eventData;  
+
+  return dataWithRelative
+}
+
+// Process HTML capture and event capture storage operations
+function updateEventStorage(captureData, sender, callback) {
+  chrome.storage.local.get(['isRecording', 'currentTaskId', 'taskHistory'], (data) => {
+    if (!data.isRecording || !data.currentTaskId || !data.taskHistory) {
+      callback();
+      return;
+    }
+    
+    const taskHistory = data.taskHistory;
+    const taskId = data.currentTaskId;
+    
+    // Initialize task if needed
+    if (!taskHistory[taskId]) {
+      taskHistory[taskId] = { events: [] };
+    }
+
+    const events = taskHistory[taskId].events || [];
+    dataWithRelative = addRelativeRecordingTimestampToEvent(captureData)
+    events.push(dataWithRelative);
+    taskHistory[taskId].events = events;
+  
+    // Save to storage
+    chrome.storage.local.set({ taskHistory: taskHistory }, callback)
+  });
+}
+
 // Listen for events from recorder.js
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'htmlCapture') {   
-    // Get current task info
-    chrome.storage.local.get(['isRecording', 'currentTaskId', 'taskHistory', 'videoStartedAtMs'], (data) => {
-      if (data.isRecording && data.currentTaskId && data.taskHistory) {
-        const taskHistory = data.taskHistory;
-        const taskId = data.currentTaskId;
-        
-        if (taskHistory[taskId]) {
-          const events = taskHistory[taskId].events || [];
-          
-          // Add the html capture to the task history
-          // Add relative timestamp aligned to video start
-          let relative = null;
-          if (videoRecording.startedAtMs || data.videoStartedAtMs) {
-            const base = videoRecording.startedAtMs || data.videoStartedAtMs;
-            relative = Math.max(0, Number(message.data.timestamp) - Number(base));
-          }
-          // Add exact video timestamp key as requested
-          const dataWithRelative = relative != null ? { 
-            ...message.data, 
-            videoTimeMs: relative, 
-            video_timestamp: relative,
-            video_event_start_ms: relative,
-            video_event_end_ms: relative
-          } : message.data;
-          events.push(dataWithRelative);
-          taskHistory[taskId].events = events;
-          
-          // Save updated task history
-          chrome.storage.local.set({ taskHistory: taskHistory });
-        }
-      }
+  if ((message.type === 'recordedEvent') || (message.type === 'htmlCapture')) {
+    eventQueue.enqueue((done) => {
+      updateEventStorage(message.event, sender, done);
     });
-    // Send a response indicating success
-    sendResponse({ success: true });
-    
-    // Don't keep the port open
-    return false;
-        
-  } else if (message.type === 'recordedEvent') {
-    console.log("Received recorded event:", {
-      type: message.event.type,
-      target: {
-        tag: message.event.target.tag,
-        id: message.event.target.id,
-        bid: message.event.target.bid,
-        isInteractive: message.event.target.isInteractive
-      },
-      timestamp: new Date(message.event.timestamp).toISOString()
-    });
-    try { sendResponse?.({ ok: true }); } catch (e) {}
-    
-    // Get current task info
-    chrome.storage.local.get(['isRecording', 'currentTaskId', 'taskHistory', 'videoStartedAtMs'], (data) => {
-      if (data.isRecording && data.currentTaskId && data.taskHistory) {
-        const taskHistory = data.taskHistory;
-        const taskId = data.currentTaskId;
-        
-        if (taskHistory[taskId]) {
-          const events = taskHistory[taskId].events || [];
-          
-          // Add the event to the task history
-          // Add relative timestamp aligned to video start
-          let relative = null;
-          if (videoRecording.startedAtMs || data.videoStartedAtMs) {
-            const base = videoRecording.startedAtMs || data.videoStartedAtMs;
-            relative = Math.max(0, Number(message.event.timestamp) - Number(base));
-          }
-          // Add exact video timestamp key as requested
-          const eventWithRelative = relative != null ? { 
-            ...message.event, 
-            videoTimeMs: relative, 
-            video_timestamp: relative,
-            video_event_start_ms: relative,
-            video_event_end_ms: relative
-          } : message.event;
-          events.push(eventWithRelative);
-          taskHistory[taskId].events = events;
-          
-          // Save updated task history
-          chrome.storage.local.set({ taskHistory: taskHistory }, () => {
-            console.log("Event saved to task history:", { type: message.event.type, totalEvents: events.length });
-          });
-        }
-      }
-    });
+    return false; // No response is sent back to recorder.js
   } else if (message.action === "viewTaskDetails") {
     // Manifest V3 background scripts cannot use DOM APIs.
     // Open a new tab to details.html and pass the taskId as a query parameter.

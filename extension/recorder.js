@@ -12,6 +12,29 @@
 
 // We wrap everything in an IIFE (Immediately Invoked Function Expression) 
 
+let lastHtmlCapture = 0;
+let isFirstPageLoad = true;
+let HTMLCOOLDOWN = 3000;
+let htmlCaptureLocked = false;
+
+
+function requestHtmlCapture(eventTimestamp) {
+  if (htmlCaptureLocked) {
+    return;
+  }
+  htmlCaptureLocked = true;
+  const now = Date.now();
+  
+  // Always capture immediately on first page load, otherwise require gap between
+  if ((now - lastHtmlCapture) >= HTMLCOOLDOWN) {
+    lastHtmlCapture = Date.now();
+    captureHtml(eventTimestamp);
+    isFirstPageLoad = false;
+  }
+  // else ignore this event
+
+  htmlCaptureLocked = false;
+}
 
 (function() {
   // Allow re-injection for new recording sessions
@@ -22,9 +45,6 @@
     window.taskRecorderInitialized = true;
     console.log("Recorder script loaded and initialized");
   }
-
-  let lastHtmlCapture = 0;
-  let isFirstPageLoad = true;
 
   // Private variables within this closure
   let events = [];
@@ -88,45 +108,45 @@
     INPUT: 'input',          // When user types or changes input
     CLICK: 'click',          // Mouse clicks
     NAVIGATION: 'navigation', // Page navigation
-    FOCUS: 'focus',          // When an element gets focus
-    MOUSE_OVER: 'mouseover', // Mouse hovering over elements
-    MOUSE_OUT: 'mouseout',   // Mouse leaving elements
-    KEY_DOWN: 'keydown',     // Keyboard key press
-    KEY_UP: 'keyup',         // Keyboard key release
-    KEY_PRESS: 'keypress',   // Character input
+    // FOCUS: 'focus',          // When an element gets focus
+    // MOUSE_OVER: 'mouseover', // Mouse hovering over elements
+    // MOUSE_OUT: 'mouseout',   // Mouse leaving elements
+    // KEY_DOWN: 'keydown',     // Keyboard key press
+    // KEY_UP: 'keyup',         // Keyboard key release
+    // KEY_PRESS: 'keypress',   // Character input
     SCROLL: 'scroll',        // Page scrolling
     SUBMIT: 'submit',        // Form submissions
     CHANGE: 'change',        // Value changes
-    BLUR: 'blur',           // Element losing focus
-    TOUCH_START: 'touchstart', // Mobile touch start
-    TOUCH_END: 'touchend',    // Mobile touch end
-    TOUCH_MOVE: 'touchmove',   // Mobile touch movement
-    POINTER_DOWN: 'pointerdown',
-    POINTER_UP: 'pointerup',
-    POINTER_MOVE: 'pointermove'
+    // BLUR: 'blur',           // Element losing focus
+    // TOUCH_START: 'touchstart', // Mobile touch start
+    // TOUCH_END: 'touchend',    // Mobile touch end
+    // TOUCH_MOVE: 'touchmove',   // Mobile touch movement
+    // POINTER_DOWN: 'pointerdown',
+    // POINTER_UP: 'pointerup',
+    // POINTER_MOVE: 'pointermove'
   };
 
   const DEFAULT_EVENT_CONFIG = {
     domEvents: [
       { name: 'click', enabled: true, handler: 'recordEvent' },
-      { name: 'mousedown', enabled: true, handler: 'recordEvent' },
-      { name: 'mouseup', enabled: true, handler: 'recordEvent' },
-      { name: 'pointerdown', enabled: true, handler: 'recordEvent' },
-      { name: 'pointerup', enabled: true, handler: 'recordEvent' },
-      { name: 'mouseover', enabled: true, handler: 'recordEvent' },
-      { name: 'mouseout', enabled: true, handler: 'recordEvent' },
-      { name: 'keydown', enabled: true, handler: 'recordEvent' },
-      { name: 'keyup', enabled: true, handler: 'recordEvent' },
-      { name: 'keypress', enabled: true, handler: 'recordEvent' },
+      // { name: 'mousedown', enabled: true, handler: 'recordEvent' },
+      // { name: 'mouseup', enabled: true, handler: 'recordEvent' },
+      // { name: 'pointerdown', enabled: true, handler: 'recordEvent' },
+      // { name: 'pointerup', enabled: true, handler: 'recordEvent' },
+      // { name: 'mouseover', enabled: true, handler: 'recordEvent' },
+      // { name: 'mouseout', enabled: true, handler: 'recordEvent' },
+      // { name: 'keydown', enabled: true, handler: 'recordEvent' },
+      // { name: 'keyup', enabled: true, handler: 'recordEvent' },
+      // { name: 'keypress', enabled: true, handler: 'recordEvent' },
       { name: 'scroll', enabled: true, handler: 'debouncedRecordScroll' },
       { name: 'input', enabled: true, handler: 'debouncedRecordInput' },
       { name: 'change', enabled: true, handler: 'debouncedRecordInput' },
-      { name: 'focus', enabled: true, handler: 'recordEvent' },
-      { name: 'blur', enabled: true, handler: 'recordEvent' },
+      // { name: 'focus', enabled: true, handler: 'recordEvent' },
+      // { name: 'blur', enabled: true, handler: 'recordEvent' },
       { name: 'submit', enabled: true, handler: 'recordEvent' },
-      { name: 'touchstart', enabled: true, handler: 'recordEvent' },
-      { name: 'touchend', enabled: true, handler: 'recordEvent' },
-      { name: 'touchmove', enabled: true, handler: 'recordEvent' }
+      // { name: 'touchstart', enabled: true, handler: 'recordEvent' },
+      // { name: 'touchend', enabled: true, handler: 'recordEvent' },
+      // { name: 'touchmove', enabled: true, handler: 'recordEvent' }
     ],
     navigationEvents: [
       { name: 'popstate', enabled: true },
@@ -336,13 +356,15 @@
     return new Date(timestamp).toISOString();
   }
 
+
+
   function captureHtml(eventTimestamp) {
     console.log('XXXXX approved html capture')
     // const currentHtml = document.documentElement.outerHTML;
     
     // Send the captured HTML to the background script
-    chrome.runtime.sendMessage({ type: 'recordedEvent',
-      data: {
+    chrome.runtime.sendMessage({ type: 'htmlCapture',
+      event: {
         html: '',
         type: 'htmlCapture',
         eventTimestamp: 0,
@@ -360,33 +382,11 @@
     //     url: window.location.href
     //   } 
     // });
-    
-    // Update timestamp of last capture
-    lastHtmlCapture = Date.now();
-  }
-
-  function requestHtmlCapture(eventTimestamp) {
-    const now = Date.now();
-    
-    // Always capture immediately on first page load
-    if (isFirstPageLoad) {
-      captureHtml(eventTimestamp);
-      isFirstPageLoad = false;
-      return;
-    }
-    
-    // If no capture is scheduled and the cooldown period has passed
-    if (now - lastHtmlCapture >= 5000) {
-      // Capture immediately
-      captureHtml(eventTimestamp);
-    }
-    // else ignore this event
   }
 
   // document.addEventListener('DOMContentLoaded', function() {
-  //   console.log('DOMContentLoaded event - requesting initial HTML capture');
   //   isFirstPageLoad = true; // Reset first page load flag
-  //   requestHtmlCapture(0);
+  //   requestHtmlCapture();
   // });
 
   // This function helps us decide if we should ignore an event
@@ -1039,13 +1039,10 @@
     // Send event to background script
     chrome.runtime.sendMessage({ type: 'recordedEvent', event: eventData });
     requestHtmlCapture(event.type);
-    // setTimeout(() => {
-    //   requestHtmlCapture(event.type);
-    // }, 50);
 
     // Also store locally for verification
-    events.push(eventData);
-    saveEvents();
+    // events.push(eventData);
+    // saveEvents();
 
     // Log click events for debugging
     if (event.type === 'click') {

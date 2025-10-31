@@ -21,13 +21,13 @@
   "host_permissions": [
     "<all_urls>"
   ],
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["recorder.js"],
-      "run_at": "document_start"
-    }
-  ],
+  // "content_scripts": [
+  //   {
+  //     "matches": ["<all_urls>"],
+  //     "js": ["recorder.js"],
+  //     "run_at": "document_start"
+  //   }
+  // ],
   "web_accessible_resources": [
     {
       "resources": ["event-config.json", "offscreen.html", "offscreen.js"],
