@@ -363,21 +363,21 @@
 
 
 
-  function captureHtml(eventType) {
-    console.log('XXXXX approved html capture')
-    const currentHtml = document.documentElement.outerHTML;
+  // function captureHtml(eventType) {
+  //   console.log('XXXXX approved html capture')
+  //   const currentHtml = document.documentElement.outerHTML;
     
-    chrome.runtime.sendMessage({ 
-      type: 'htmlCapture', 
-      event: {
-        html: currentHtml,
-        type: 'htmlCapture',
-        eventType: eventType,
-        timestamp: Date.now(),
-        url: window.location.href
-      } 
-    });
-  }
+  //   chrome.runtime.sendMessage({ 
+  //     type: 'htmlCapture', 
+  //     event: {
+  //       html: currentHtml,
+  //       type: 'htmlCapture',
+  //       eventType: eventType,
+  //       timestamp: Date.now(),
+  //       url: window.location.href
+  //     } 
+  //   });
+  // }
 
   document.addEventListener('DOMContentLoaded', function() {
     isNewPageLoad = true; // Reset first page load flag
@@ -719,9 +719,11 @@
     const truncatedText = textContent.length > 200 ? `${textContent.slice(0, 200)}...` : textContent;
 
     let outerHTMLSnippet = null;
+    let outerHTMLFull = null;
     if (typeof element.outerHTML === 'string') {
       const trimmedOuter = element.outerHTML.trim();
       if (trimmedOuter) {
+        outerHTMLFull = trimmedOuter;
         outerHTMLSnippet = trimmedOuter.length > 3000
           ? `${trimmedOuter.slice(0, 3000)}...`
           : trimmedOuter;
@@ -743,7 +745,8 @@
       boundingBox: getElementBoundingBox(element),
       browsergym_set_of_marks: element.getAttribute('browsergym_set_of_marks') || null,
       browsergym_visibility_ratio: element.getAttribute('browsergym_visibility_ratio') || null,
-      outerHTMLSnippet
+      outerHTMLSnippet,
+      outerHTMLFull
     };
   }
 

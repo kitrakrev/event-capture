@@ -1,14 +1,14 @@
 // Details window script for viewing a task's recorded events.
 //
 // Purpose: Render a human-readable view of a single task's events with basic
-// filtering and sorting. Offers a button to push the raw events to a legacy
-// backend (kept for reference; main flow uses the unified API).
+// filtering and sorting. Provides a button that pushes the normalized task
+// payload to the configured backend (the same flow used by the popup).
 //
 // What it does:
 // - Reads the taskId from the query string.
 // - Loads the task from chrome.storage.local and renders events.
 // - Provides simple filter (by type) and sort (by timestamp/type).
-// - Includes a push button to POST events to a demonstrated endpoint.
+// - Includes a push button to POST the task to the backend API.
 
 // Parse taskId from URL
 const urlParams = new URLSearchParams(window.location.search);
@@ -17,30 +17,75 @@ const taskId = urlParams.get('taskId');
 document.getElementById('eventData').textContent = 'Loading...';
 document.getElementById('eventCount').textContent = '';
 
-async function pushToMongoDB(data) {
-  try {
-    const response = await fetch('https://4ba7541c-d467-4d08-ac05-8531ce5b74a4-00-2mvyzjzumqrkj.riker.replit.dev/api/events', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'omit', // Don't send credentials
-      body: JSON.stringify({
-        taskId: taskId,
-        events: data
-      })
-    });
+const pushButton = document.getElementById('pushToMongoBtn');
+let currentTask = null;
 
-    const result = await response.json();
-    
-    if (response.ok) {
-      alert('Data successfully pushed to MongoDB!');
-    } else {
-      throw new Error(result.error || 'Failed to push data');
+function normalizeEvents(events = []) {
+  return events.map((event) => ({
+    ...event,
+    video_timestamp: typeof event.video_timestamp === 'number'
+      ? event.video_timestamp
+      : (typeof event.videoTimeMs === 'number' ? event.videoTimeMs : null),
+  }));
+}
+
+async function pushTaskToMongo(buttonElement) {
+  if (!currentTask || !Array.isArray(currentTask.events) || currentTask.events.length === 0) {
+    alert('No event data available to push.');
+    return;
+  }
+
+  const payload = buildTaskPayload(currentTask);
+  if (!payload) {
+    alert('Unable to build payload from task data.');
+    return;
+  }
+
+  payload.data = currentTask.events;
+  if (currentTask.video_local_path) payload.video_local_path = currentTask.video_local_path;
+  if (currentTask.video_server_path) payload.video_server_path = currentTask.video_server_path;
+
+  try {
+    if (buttonElement) {
+      buttonElement.disabled = true;
+      buttonElement.textContent = 'Pushing...';
     }
+
+    const result = await sendTaskPayload(payload);
+    if (
+      result &&
+      result.folderIso &&
+      typeof chrome !== 'undefined' &&
+      chrome.runtime &&
+      typeof chrome.runtime.sendMessage === 'function'
+    ) {
+      try {
+        await chrome.runtime.sendMessage({ type: 'INGEST_DONE', folderIso: result.folderIso });
+      } catch (messageError) {
+        console.warn('Failed to notify background of INGEST_DONE:', messageError);
+      }
+    }
+
+    try {
+      await savePayloadAndAssets(currentTask, payload, { success: true, response: result });
+    } catch (archiveError) {
+      console.warn('Failed to archive payload locally:', archiveError);
+    }
+
+    alert('Data successfully pushed to MongoDB!');
   } catch (error) {
     console.error('Error pushing to MongoDB:', error);
+    try {
+      await savePayloadAndAssets(currentTask, payload, { success: false, error: error.message });
+    } catch (archiveError) {
+      console.warn('Failed to archive payload after error:', archiveError);
+    }
     alert('Error pushing to MongoDB: ' + error.message);
+  } finally {
+    if (buttonElement) {
+      buttonElement.disabled = false;
+      buttonElement.textContent = 'Push to MongoDB';
+    }
   }
 }
 
@@ -50,12 +95,14 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!task) {
       document.getElementById('taskTitle').textContent = 'Task not found';
       document.getElementById('eventData').textContent = '';
+      if (pushButton) pushButton.disabled = true;
       return;
     }
 
     document.getElementById('taskTitle').textContent = task.title;
-    const events = task.events || [];
+    const events = normalizeEvents(task.events || []);
     const eventTypes = Array.from(new Set(events.map(e => e.type))).sort();
+    currentTask = { ...task, events };
 
     // Populate filter dropdown
     const filter = document.getElementById('eventTypeFilter');
@@ -105,11 +152,13 @@ document.addEventListener('DOMContentLoaded', function() {
       renderEvents();
     });
 
-    // Add MongoDB push button event listener
-    document.getElementById('pushToMongoBtn').addEventListener('click', function() {
-      pushToMongoDB(events);
-    });
+    if (pushButton) {
+      pushButton.disabled = events.length === 0;
+      pushButton.addEventListener('click', function() {
+        pushTaskToMongo(pushButton);
+      });
+    }
 
     renderEvents();
   });
-}); 
+});
