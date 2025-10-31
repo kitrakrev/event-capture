@@ -363,7 +363,7 @@
 
 
 
-  function captureHtml(eventTimestamp) {
+  function captureHtml(eventType) {
     console.log('XXXXX approved html capture')
     const currentHtml = document.documentElement.outerHTML;
     
@@ -372,17 +372,17 @@
       event: {
         html: currentHtml,
         type: 'htmlCapture',
-        eventTimestamp: eventTimestamp,
+        eventType: eventType,
         timestamp: Date.now(),
         url: window.location.href
       } 
     });
   }
 
-  // document.addEventListener('DOMContentLoaded', function() {
-  //   isNewPageLoad = true; // Reset first page load flag
-  //   requestHtmlCapture();
-  // });
+  document.addEventListener('DOMContentLoaded', function() {
+    isNewPageLoad = true; // Reset first page load flag
+    requestHtmlCapture('new page loaded');
+  });
 
   // This function helps us decide if we should ignore an event
   // We don't want to record every tiny movement or duplicate actions
