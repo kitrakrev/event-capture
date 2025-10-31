@@ -317,7 +317,46 @@ async function uploadVideoBlob(folderIso, blob) {
 
 // Listen for events from recorder.js
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'recordedEvent') {
+  if (message.type === 'htmlCapture') {   
+    // Get current task info
+    chrome.storage.local.get(['isRecording', 'currentTaskId', 'taskHistory', 'videoStartedAtMs'], (data) => {
+      if (data.isRecording && data.currentTaskId && data.taskHistory) {
+        const taskHistory = data.taskHistory;
+        const taskId = data.currentTaskId;
+        
+        if (taskHistory[taskId]) {
+          const events = taskHistory[taskId].events || [];
+          
+          // Add the html capture to the task history
+          // Add relative timestamp aligned to video start
+          let relative = null;
+          if (videoRecording.startedAtMs || data.videoStartedAtMs) {
+            const base = videoRecording.startedAtMs || data.videoStartedAtMs;
+            relative = Math.max(0, Number(message.data.timestamp) - Number(base));
+          }
+          // Add exact video timestamp key as requested
+          const dataWithRelative = relative != null ? { 
+            ...message.data, 
+            videoTimeMs: relative, 
+            video_timestamp: relative,
+            video_event_start_ms: relative,
+            video_event_end_ms: relative
+          } : message.data;
+          events.push(dataWithRelative);
+          taskHistory[taskId].events = events;
+          
+          // Save updated task history
+          chrome.storage.local.set({ taskHistory: taskHistory });
+        }
+      }
+    });
+    // Send a response indicating success
+    sendResponse({ success: true });
+    
+    // Don't keep the port open
+    return false;
+        
+  } else if (message.type === 'recordedEvent') {
     console.log("Received recorded event:", {
       type: message.event.type,
       target: {

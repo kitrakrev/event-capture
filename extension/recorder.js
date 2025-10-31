@@ -23,6 +23,9 @@
     console.log("Recorder script loaded and initialized");
   }
 
+  let lastHtmlCapture = 0;
+  let isFirstPageLoad = true;
+
   // Private variables within this closure
   let events = [];
   let isRecording = false;
@@ -332,6 +335,59 @@
   function formatTimestamp(timestamp) {
     return new Date(timestamp).toISOString();
   }
+
+  function captureHtml(eventTimestamp) {
+    console.log('XXXXX approved html capture')
+    // const currentHtml = document.documentElement.outerHTML;
+    
+    // Send the captured HTML to the background script
+    chrome.runtime.sendMessage({ type: 'recordedEvent',
+      data: {
+        html: '',
+        type: 'htmlCapture',
+        eventTimestamp: 0,
+        timestamp: Date.now(),
+        url: ''
+      } 
+    });      
+    // chrome.runtime.sendMessage({ 
+    //   type: 'htmlCapture', 
+    //   data: {
+    //     html: currentHtml,
+    //     type: 'htmlCapture',
+    //     eventTimestamp: eventTimestamp,
+    //     timestamp: Date.now(),
+    //     url: window.location.href
+    //   } 
+    // });
+    
+    // Update timestamp of last capture
+    lastHtmlCapture = Date.now();
+  }
+
+  function requestHtmlCapture(eventTimestamp) {
+    const now = Date.now();
+    
+    // Always capture immediately on first page load
+    if (isFirstPageLoad) {
+      captureHtml(eventTimestamp);
+      isFirstPageLoad = false;
+      return;
+    }
+    
+    // If no capture is scheduled and the cooldown period has passed
+    if (now - lastHtmlCapture >= 5000) {
+      // Capture immediately
+      captureHtml(eventTimestamp);
+    }
+    // else ignore this event
+  }
+
+  // document.addEventListener('DOMContentLoaded', function() {
+  //   console.log('DOMContentLoaded event - requesting initial HTML capture');
+  //   isFirstPageLoad = true; // Reset first page load flag
+  //   requestHtmlCapture(0);
+  // });
 
   // This function helps us decide if we should ignore an event
   // We don't want to record every tiny movement or duplicate actions
@@ -982,6 +1038,10 @@
 
     // Send event to background script
     chrome.runtime.sendMessage({ type: 'recordedEvent', event: eventData });
+    requestHtmlCapture(event.type);
+    // setTimeout(() => {
+    //   requestHtmlCapture(event.type);
+    // }, 50);
 
     // Also store locally for verification
     events.push(eventData);
@@ -1482,7 +1542,7 @@
               console.error("Events failed to save:", chrome.runtime.lastError);
               return;
             }
-            console.log("Events saved to task history");
+            // console.log("Events saved to task history");
           });
         }
       });
@@ -1511,7 +1571,7 @@
               }
               return;
             }
-            console.log("Events saved to task history");
+            // console.log("Events saved to task history");
             recoveryState.lastSavedTimestamp = Date.now();
             recoveryState.errorCount = 0;
           });
@@ -1632,83 +1692,83 @@
     });
   }
 
-  // Add periodic event verification
-  setInterval(() => {
-    if (isRecording) {
-      console.log('Event Capture Status:', {
-        totalEvents: events.length,
-        clicks: eventVerification.clicks.length,
-        inputs: eventVerification.inputs.length,
-        navigations: eventVerification.navigations.length,
-        lastMinute: {
-          clicks: eventVerification.clicks.filter(c => Date.now() - c.time < 60000).length,
-          inputs: eventVerification.inputs.filter(i => Date.now() - i.time < 60000).length,
-          navigations: eventVerification.navigations.filter(n => Date.now() - n.time < 60000).length
-        }
-      });
-    }
-  }, 5000);
+  // // Add periodic event verification
+  // setInterval(() => {
+  //   if (isRecording) {
+  //     console.log('Event Capture Status:', {
+  //       totalEvents: events.length,
+  //       clicks: eventVerification.clicks.length,
+  //       inputs: eventVerification.inputs.length,
+  //       navigations: eventVerification.navigations.length,
+  //       lastMinute: {
+  //         clicks: eventVerification.clicks.filter(c => Date.now() - c.time < 60000).length,
+  //         inputs: eventVerification.inputs.filter(i => Date.now() - i.time < 60000).length,
+  //         navigations: eventVerification.navigations.filter(n => Date.now() - n.time < 60000).length
+  //       }
+  //     });
+  //   }
+  // }, 5000);
 
-  // Add periodic validation check
-  setInterval(() => {
-    if (isRecording && testMode.enabled) {
-      const currentTime = Date.now();
-      if (currentTime - testMode.lastValidationTime >= testMode.validationInterval) {
-        // Check validation queue
-        const unverified = testMode.validationQueue.filter(v => !v.verified);
-        if (unverified.length > 0) {
-          console.warn(`Found ${unverified.length} unverified events:`, unverified);
-        }
+  // // Add periodic validation check
+  // setInterval(() => {
+  //   if (isRecording && testMode.enabled) {
+  //     const currentTime = Date.now();
+  //     if (currentTime - testMode.lastValidationTime >= testMode.validationInterval) {
+  //       // Check validation queue
+  //       const unverified = testMode.validationQueue.filter(v => !v.verified);
+  //       if (unverified.length > 0) {
+  //         console.warn(`Found ${unverified.length} unverified events:`, unverified);
+  //       }
         
-        // Log validation statistics
-        console.log('Event Capture Validation Status:', {
-          totalEvents: events.length,
-          validationQueueSize: testMode.validationQueue.length,
-          verifiedEvents: testMode.validationQueue.filter(v => v.verified).length,
-          unverifiedEvents: unverified.length,
-          lastMinute: {
-            total: testMode.validationQueue.filter(v => currentTime - v.timestamp < 60000).length,
-            verified: testMode.validationQueue.filter(v => v.verified && currentTime - v.timestamp < 60000).length
-          }
-        });
+  //       // Log validation statistics
+  //       console.log('Event Capture Validation Status:', {
+  //         totalEvents: events.length,
+  //         validationQueueSize: testMode.validationQueue.length,
+  //         verifiedEvents: testMode.validationQueue.filter(v => v.verified).length,
+  //         unverifiedEvents: unverified.length,
+  //         lastMinute: {
+  //           total: testMode.validationQueue.filter(v => currentTime - v.timestamp < 60000).length,
+  //           verified: testMode.validationQueue.filter(v => v.verified && currentTime - v.timestamp < 60000).length
+  //         }
+  //       });
         
-        testMode.lastValidationTime = currentTime;
-      }
-    }
-  }, 1000);
+  //       testMode.lastValidationTime = currentTime;
+  //     }
+  //   }
+  // }, 1000);
 
-  // Add periodic recording state verification
-  setInterval(() => {
-    if (isRecording) {
-      console.log('Recording State Check:', {
-        isRecording,
-        currentTaskId,
-        totalEvents: events.length,
-        lastEventTime: events.length > 0 ? events[events.length - 1].timestamp : null,
-        clickCount: clickState.clickCount,
-        eventListeners: {
-          click: document.onclick !== null,
-          mousedown: document.onmousedown !== null,
-          mouseup: document.onmouseup !== null
-        }
-      });
-    }
-  }, 2000);
+  // // Add periodic recording state verification
+  // setInterval(() => {
+  //   if (isRecording) {
+  //     console.log('Recording State Check:', {
+  //       isRecording,
+  //       currentTaskId,
+  //       totalEvents: events.length,
+  //       lastEventTime: events.length > 0 ? events[events.length - 1].timestamp : null,
+  //       clickCount: clickState.clickCount,
+  //       eventListeners: {
+  //         click: document.onclick !== null,
+  //         mousedown: document.onmousedown !== null,
+  //         mouseup: document.onmouseup !== null
+  //       }
+  //     });
+  //   }
+  // }, 2000);
 
-  // Add click event verification
-  document.addEventListener('click', function verifyClick(e) {
-    if (isRecording) {
-      console.log('Click Verification:', {
-        target: e.target.tagName,
-        id: e.target.id,
-        class: e.target.className,
-        isInteractive: isInteractiveElement(e.target),
-        recordingState: {
-          isRecording,
-          currentTaskId,
-          clickCount: clickState.clickCount
-        }
-      });
-    }
-  }, true);
+  // // Add click event verification
+  // document.addEventListener('click', function verifyClick(e) {
+  //   if (isRecording) {
+  //     console.log('Click Verification:', {
+  //       target: e.target.tagName,
+  //       id: e.target.id,
+  //       class: e.target.className,
+  //       isInteractive: isInteractiveElement(e.target),
+  //       recordingState: {
+  //         isRecording,
+  //         currentTaskId,
+  //         clickCount: clickState.clickCount
+  //       }
+  //     });
+  //   }
+  // }, true);
 })(); // End of IIFE
