@@ -13,30 +13,32 @@
 // We wrap everything in an IIFE (Immediately Invoked Function Expression) 
 
 let lastHtmlCapture = 0;
-let isFirstPageLoad = true;
+let isNewPageLoad = true;
 let HTMLCOOLDOWN = 3000;
 let htmlCaptureLocked = false;
 
 
-function requestHtmlCapture(eventTimestamp) {
-  if (htmlCaptureLocked) {
-    return;
-  }
-  htmlCaptureLocked = true;
-  const now = Date.now();
-  
-  // Always capture immediately on first page load, otherwise require gap between
-  if ((now - lastHtmlCapture) >= HTMLCOOLDOWN) {
-    lastHtmlCapture = Date.now();
-    captureHtml(eventTimestamp);
-    isFirstPageLoad = false;
-  }
-  // else ignore this event
-
-  htmlCaptureLocked = false;
-}
-
 (function() {
+
+
+  function requestHtmlCapture(eventTimestamp) {
+    if (htmlCaptureLocked) {
+      return;
+    }
+    htmlCaptureLocked = true;
+    const now = Date.now();
+    
+    // Always capture immediately on first page load, otherwise require gap between
+    if (isNewPageLoad || (now - lastHtmlCapture) >= HTMLCOOLDOWN) {
+      lastHtmlCapture = Date.now();
+      captureHtml(eventTimestamp);
+      isNewPageLoad = false;
+    }
+    // else ignore this event
+
+    htmlCaptureLocked = false;
+  }
+
   // Allow re-injection for new recording sessions
   // Instead of blocking entirely, we'll check during specific operations
   if (window.taskRecorderInitialized) {
@@ -385,7 +387,7 @@ function requestHtmlCapture(eventTimestamp) {
   }
 
   // document.addEventListener('DOMContentLoaded', function() {
-  //   isFirstPageLoad = true; // Reset first page load flag
+  //   isNewPageLoad = true; // Reset first page load flag
   //   requestHtmlCapture();
   // });
 
