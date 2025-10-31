@@ -441,17 +441,17 @@ let htmlCaptureLocked = false;
         clickState.clickCount++;
         
         // Log what we clicked on - helpful for debugging
-        console.log(`Click detected on:`, {
-            element: element.tagName,
-            id: element.id,
-            class: element.className,
-            text: element.textContent.trim().substring(0, 50),
-            clickCount: clickState.clickCount,
-            type: type,
-            timestamp: new Date(currentTime).toISOString(),
-            button: event.button,  // Which mouse button was used
-            buttons: event.buttons // State of all mouse buttons
-        });
+        // console.log(`Click detected on:`, {
+        //     element: element.tagName,
+        //     id: element.id,
+        //     class: element.className,
+        //     text: element.textContent.trim().substring(0, 50),
+        //     clickCount: clickState.clickCount,
+        //     type: type,
+        //     timestamp: new Date(currentTime).toISOString(),
+        //     button: event.button,  // Which mouse button was used
+        //     buttons: event.buttons // State of all mouse buttons
+        // });
 
         // Always record clicks on interactive elements (buttons, links, etc.)
         if (isInteractiveElement(element)) {
@@ -479,14 +479,15 @@ let htmlCaptureLocked = false;
     }
 
     // Handle mouse hover events - only record for interactive elements or tooltips
-    if (type === EVENT_TYPES.MOUSE_OVER || type === EVENT_TYPES.MOUSE_OUT) {
-        if (!isInteractiveElement(element) && !element.hasAttribute('title')) {
-            return true; // Ignore hovering over regular text
-        }
-    }
+    // if (type === EVENT_TYPES.MOUSE_OVER || type === EVENT_TYPES.MOUSE_OUT) {
+    //     if (!isInteractiveElement(element) && !element.hasAttribute('title')) {
+    //         return true; // Ignore hovering over regular text
+    //     }
+    // }
 
     // Check for duplicate events within a short time window
     if (type !== EVENT_TYPES.CLICK &&
+        type !== EVENT_TYPES.INPUT &&
         lastEventData.type === type && 
         lastEventData.target === element && 
         currentTime - lastEventData.timestamp < 300) {
@@ -949,52 +950,52 @@ let htmlCaptureLocked = false;
     }
 
     // Add event-specific data
-    if (event.type === 'click') {
-      eventData.button = event.button;
-      eventData.buttons = event.buttons;
-      eventData.clientX = event.clientX;
-      eventData.clientY = event.clientY;
-      eventData.screenX = event.screenX;
-      eventData.screenY = event.screenY;
-      eventData.pageX = event.pageX;
-      eventData.pageY = event.pageY;
-      eventData.offsetX = event.offsetX;
-      eventData.offsetY = event.offsetY;
-      eventData.movementX = event.movementX;
-      eventData.movementY = event.movementY;
-      eventData.ctrlKey = event.ctrlKey;
-      eventData.altKey = event.altKey;
-      eventData.shiftKey = event.shiftKey;
-      eventData.metaKey = event.metaKey;
-      eventData.detail = event.detail; // For double clicks
-    }
+    // if (event.type === 'click') {
+    //   eventData.button = event.button;
+    //   eventData.buttons = event.buttons;
+    //   eventData.clientX = event.clientX;
+    //   eventData.clientY = event.clientY;
+    //   eventData.screenX = event.screenX;
+    //   eventData.screenY = event.screenY;
+    //   eventData.pageX = event.pageX;
+    //   eventData.pageY = event.pageY;
+    //   eventData.offsetX = event.offsetX;
+    //   eventData.offsetY = event.offsetY;
+    //   eventData.movementX = event.movementX;
+    //   eventData.movementY = event.movementY;
+    //   eventData.ctrlKey = event.ctrlKey;
+    //   eventData.altKey = event.altKey;
+    //   eventData.shiftKey = event.shiftKey;
+    //   eventData.metaKey = event.metaKey;
+    //   eventData.detail = event.detail; // For double clicks
+    // }
 
-    if (event.type === EVENT_TYPES.POINTER_DOWN || event.type === EVENT_TYPES.POINTER_UP || event.type === EVENT_TYPES.POINTER_MOVE) {
-      eventData.pointerType = event.pointerType;
-      eventData.pointerId = event.pointerId;
-      eventData.isPrimary = event.isPrimary;
-      eventData.pressure = event.pressure;
-      eventData.tiltX = event.tiltX;
-      eventData.tiltY = event.tiltY;
-      eventData.twist = event.twist;
-      eventData.width = event.width;
-      eventData.height = event.height;
-    }
+    // if (event.type === EVENT_TYPES.POINTER_DOWN || event.type === EVENT_TYPES.POINTER_UP || event.type === EVENT_TYPES.POINTER_MOVE) {
+    //   eventData.pointerType = event.pointerType;
+    //   eventData.pointerId = event.pointerId;
+    //   eventData.isPrimary = event.isPrimary;
+    //   eventData.pressure = event.pressure;
+    //   eventData.tiltX = event.tiltX;
+    //   eventData.tiltY = event.tiltY;
+    //   eventData.twist = event.twist;
+    //   eventData.width = event.width;
+    //   eventData.height = event.height;
+    // }
 
-    if (event.type === EVENT_TYPES.KEY_DOWN || event.type === EVENT_TYPES.KEY_UP || event.type === EVENT_TYPES.KEY_PRESS) {
-      eventData.key = event.key;
-      eventData.code = event.code;
-      eventData.keyCode = event.keyCode;
-      eventData.location = event.location;
-      eventData.repeat = event.repeat;
-      eventData.modifierState = {
-        ctrl: event.ctrlKey,
-        alt: event.altKey,
-        shift: event.shiftKey,
-        meta: event.metaKey,
-        capsLock: event.getModifierState ? event.getModifierState('CapsLock') : false
-      };
-    }
+    // if (event.type === EVENT_TYPES.KEY_DOWN || event.type === EVENT_TYPES.KEY_UP || event.type === EVENT_TYPES.KEY_PRESS) {
+    //   eventData.key = event.key;
+    //   eventData.code = event.code;
+    //   eventData.keyCode = event.keyCode;
+    //   eventData.location = event.location;
+    //   eventData.repeat = event.repeat;
+    //   eventData.modifierState = {
+    //     ctrl: event.ctrlKey,
+    //     alt: event.altKey,
+    //     shift: event.shiftKey,
+    //     meta: event.metaKey,
+    //     capsLock: event.getModifierState ? event.getModifierState('CapsLock') : false
+    //   };
+    // }
 
     if (event.type === EVENT_TYPES.INPUT || event.type === EVENT_TYPES.CHANGE) {
       eventData.inputType = event.inputType;
@@ -1017,26 +1018,26 @@ let htmlCaptureLocked = false;
       }
     }
 
-    if (event.type === EVENT_TYPES.SCROLL) {
-      const target = metadataElement === document.documentElement ? document.scrollingElement || document.documentElement : metadataElement;
-      if (target) {
-        eventData.scroll = {
-          scrollTop: target.scrollTop,
-          scrollLeft: target.scrollLeft,
-          scrollHeight: target.scrollHeight,
-          scrollWidth: target.scrollWidth,
-          clientHeight: target.clientHeight,
-          clientWidth: target.clientWidth
-        };
-      }
-      if (typeof event.deltaY === 'number' || typeof event.deltaX === 'number') {
-        eventData.delta = {
-          deltaX: event.deltaX,
-          deltaY: event.deltaY,
-          deltaMode: event.deltaMode
-        };
-      }
-    }
+    // if (event.type === EVENT_TYPES.SCROLL) {
+    //   const target = metadataElement === document.documentElement ? document.scrollingElement || document.documentElement : metadataElement;
+    //   if (target) {
+    //     eventData.scroll = {
+    //       scrollTop: target.scrollTop,
+    //       scrollLeft: target.scrollLeft,
+    //       scrollHeight: target.scrollHeight,
+    //       scrollWidth: target.scrollWidth,
+    //       clientHeight: target.clientHeight,
+    //       clientWidth: target.clientWidth
+    //     };
+    //   }
+    //   if (typeof event.deltaY === 'number' || typeof event.deltaX === 'number') {
+    //     eventData.delta = {
+    //       deltaX: event.deltaX,
+    //       deltaY: event.deltaY,
+    //       deltaMode: event.deltaMode
+    //     };
+    //   }
+    // }
 
     // Send event to background script
     chrome.runtime.sendMessage({ type: 'recordedEvent', event: eventData });
@@ -1047,36 +1048,36 @@ let htmlCaptureLocked = false;
     // saveEvents();
 
     // Log click events for debugging
-    if (event.type === 'click') {
-      console.log('Click recorded:', {
-        type: event.type,
-        target: {
-          tag: metadataElement.tagName,
-          id: metadataElement.id,
-          class: metadataElement.className,
-          text: metadataElement.textContent.trim().substring(0, 50),
-          isInteractive: isInteractiveElement(metadataElement),
-          bid: eventData.target.bid
-        },
-        position: {
-          client: { x: event.clientX, y: event.clientY },
-          screen: { x: event.screenX, y: event.screenY },
-          page: { x: event.pageX, y: event.pageY }
-        },
-        buttons: {
-          button: event.button,
-          buttons: event.buttons,
-          detail: event.detail
-        },
-        modifiers: {
-          ctrl: event.ctrlKey,
-          alt: event.altKey,
-          shift: event.shiftKey,
-          meta: event.metaKey
-        },
-        timestamp: new Date(eventData.timestamp).toISOString()
-      });
-    }
+  //   if (event.type === 'click') {
+  //     console.log('Click recorded:', {
+  //       type: event.type,
+  //       target: {
+  //         tag: metadataElement.tagName,
+  //         id: metadataElement.id,
+  //         class: metadataElement.className,
+  //         text: metadataElement.textContent.trim().substring(0, 50),
+  //         isInteractive: isInteractiveElement(metadataElement),
+  //         bid: eventData.target.bid
+  //       },
+  //       position: {
+  //         client: { x: event.clientX, y: event.clientY },
+  //         screen: { x: event.screenX, y: event.screenY },
+  //         page: { x: event.pageX, y: event.pageY }
+  //       },
+  //       buttons: {
+  //         button: event.button,
+  //         buttons: event.buttons,
+  //         detail: event.detail
+  //       },
+  //       modifiers: {
+  //         ctrl: event.ctrlKey,
+  //         alt: event.altKey,
+  //         shift: event.shiftKey,
+  //         meta: event.metaKey
+  //       },
+  //       timestamp: new Date(eventData.timestamp).toISOString()
+  //     });
+  //   }
   }
 
   // Simple function to get accessibility identifiers for an element
