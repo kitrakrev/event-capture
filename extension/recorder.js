@@ -943,52 +943,52 @@
     }
 
     // Add event-specific data
-    // if (event.type === 'click') {
-    //   eventData.button = event.button;
-    //   eventData.buttons = event.buttons;
-    //   eventData.clientX = event.clientX;
-    //   eventData.clientY = event.clientY;
-    //   eventData.screenX = event.screenX;
-    //   eventData.screenY = event.screenY;
-    //   eventData.pageX = event.pageX;
-    //   eventData.pageY = event.pageY;
-    //   eventData.offsetX = event.offsetX;
-    //   eventData.offsetY = event.offsetY;
-    //   eventData.movementX = event.movementX;
-    //   eventData.movementY = event.movementY;
-    //   eventData.ctrlKey = event.ctrlKey;
-    //   eventData.altKey = event.altKey;
-    //   eventData.shiftKey = event.shiftKey;
-    //   eventData.metaKey = event.metaKey;
-    //   eventData.detail = event.detail; // For double clicks
-    // }
+    if (event.type === 'click') {
+      eventData.button = event.button;
+      eventData.buttons = event.buttons;
+      eventData.clientX = event.clientX;
+      eventData.clientY = event.clientY;
+      eventData.screenX = event.screenX;
+      eventData.screenY = event.screenY;
+      eventData.pageX = event.pageX;
+      eventData.pageY = event.pageY;
+      eventData.offsetX = event.offsetX;
+      eventData.offsetY = event.offsetY;
+      eventData.movementX = event.movementX;
+      eventData.movementY = event.movementY;
+      eventData.ctrlKey = event.ctrlKey;
+      eventData.altKey = event.altKey;
+      eventData.shiftKey = event.shiftKey;
+      eventData.metaKey = event.metaKey;
+      eventData.detail = event.detail; // For double clicks
+    }
 
-    // if (event.type === EVENT_TYPES.POINTER_DOWN || event.type === EVENT_TYPES.POINTER_UP || event.type === EVENT_TYPES.POINTER_MOVE) {
-    //   eventData.pointerType = event.pointerType;
-    //   eventData.pointerId = event.pointerId;
-    //   eventData.isPrimary = event.isPrimary;
-    //   eventData.pressure = event.pressure;
-    //   eventData.tiltX = event.tiltX;
-    //   eventData.tiltY = event.tiltY;
-    //   eventData.twist = event.twist;
-    //   eventData.width = event.width;
-    //   eventData.height = event.height;
-    // }
+    if (event.type === EVENT_TYPES.POINTER_DOWN || event.type === EVENT_TYPES.POINTER_UP || event.type === EVENT_TYPES.POINTER_MOVE) {
+      eventData.pointerType = event.pointerType;
+      eventData.pointerId = event.pointerId;
+      eventData.isPrimary = event.isPrimary;
+      eventData.pressure = event.pressure;
+      eventData.tiltX = event.tiltX;
+      eventData.tiltY = event.tiltY;
+      eventData.twist = event.twist;
+      eventData.width = event.width;
+      eventData.height = event.height;
+    }
 
-    // if (event.type === EVENT_TYPES.KEY_DOWN || event.type === EVENT_TYPES.KEY_UP || event.type === EVENT_TYPES.KEY_PRESS) {
-    //   eventData.key = event.key;
-    //   eventData.code = event.code;
-    //   eventData.keyCode = event.keyCode;
-    //   eventData.location = event.location;
-    //   eventData.repeat = event.repeat;
-    //   eventData.modifierState = {
-    //     ctrl: event.ctrlKey,
-    //     alt: event.altKey,
-    //     shift: event.shiftKey,
-    //     meta: event.metaKey,
-    //     capsLock: event.getModifierState ? event.getModifierState('CapsLock') : false
-    //   };
-    // }
+    if (event.type === EVENT_TYPES.KEY_DOWN || event.type === EVENT_TYPES.KEY_UP || event.type === EVENT_TYPES.KEY_PRESS) {
+      eventData.key = event.key;
+      eventData.code = event.code;
+      eventData.keyCode = event.keyCode;
+      eventData.location = event.location;
+      eventData.repeat = event.repeat;
+      eventData.modifierState = {
+        ctrl: event.ctrlKey,
+        alt: event.altKey,
+        shift: event.shiftKey,
+        meta: event.metaKey,
+        capsLock: event.getModifierState ? event.getModifierState('CapsLock') : false
+      };
+    }
 
     if (event.type === EVENT_TYPES.INPUT || event.type === EVENT_TYPES.CHANGE) {
       eventData.inputType = event.inputType;
@@ -1011,26 +1011,26 @@
       }
     }
 
-    // if (event.type === EVENT_TYPES.SCROLL) {
-    //   const target = metadataElement === document.documentElement ? document.scrollingElement || document.documentElement : metadataElement;
-    //   if (target) {
-    //     eventData.scroll = {
-    //       scrollTop: target.scrollTop,
-    //       scrollLeft: target.scrollLeft,
-    //       scrollHeight: target.scrollHeight,
-    //       scrollWidth: target.scrollWidth,
-    //       clientHeight: target.clientHeight,
-    //       clientWidth: target.clientWidth
-    //     };
-    //   }
-    //   if (typeof event.deltaY === 'number' || typeof event.deltaX === 'number') {
-    //     eventData.delta = {
-    //       deltaX: event.deltaX,
-    //       deltaY: event.deltaY,
-    //       deltaMode: event.deltaMode
-    //     };
-    //   }
-    // }
+    if (event.type === EVENT_TYPES.SCROLL) {
+      const target = metadataElement === document.documentElement ? document.scrollingElement || document.documentElement : metadataElement;
+      if (target) {
+        eventData.scroll = {
+          scrollTop: target.scrollTop,
+          scrollLeft: target.scrollLeft,
+          scrollHeight: target.scrollHeight,
+          scrollWidth: target.scrollWidth,
+          clientHeight: target.clientHeight,
+          clientWidth: target.clientWidth
+        };
+      }
+      if (typeof event.deltaY === 'number' || typeof event.deltaX === 'number') {
+        eventData.delta = {
+          deltaX: event.deltaX,
+          deltaY: event.deltaY,
+          deltaMode: event.deltaMode
+        };
+      }
+    }
 
     // Send event to background script
     chrome.runtime.sendMessage({ type: 'recordedEvent', event: eventData });
