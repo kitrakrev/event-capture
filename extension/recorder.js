@@ -363,21 +363,36 @@
 
 
 
-  // function captureHtml(eventType) {
-  //   console.log('XXXXX approved html capture')
-  //   const currentHtml = document.documentElement.outerHTML;
+  function captureHtml(eventType) {
+    console.log('XXXXX approved html capture')
+
+    const clone = document.documentElement.cloneNode(true);
+    // Inline all stylesheets
+    const styles = Array.from(document.styleSheets);
+    for (const sheet of styles) {
+      try {
+        const rules = Array.from(sheet.cssRules).map(r => r.cssText).join('\n');
+        const style = document.createElement('style');
+        style.textContent = rules;
+        clone.querySelector('head').appendChild(style);
+      } catch (err) {
+        // Some cross-origin stylesheets can’t be read due to CORS
+        console.warn('Skipped stylesheet:', sheet.href);
+      }
+    }
+    const currentHtml = '<!DOCTYPE html>\n' + clone.outerHTML;
     
-  //   chrome.runtime.sendMessage({ 
-  //     type: 'htmlCapture', 
-  //     event: {
-  //       html: currentHtml,
-  //       type: 'htmlCapture',
-  //       eventType: eventType,
-  //       timestamp: Date.now(),
-  //       url: window.location.href
-  //     } 
-  //   });
-  // }
+    chrome.runtime.sendMessage({ 
+      type: 'htmlCapture', 
+      event: {
+        html: currentHtml,
+        type: 'htmlCapture',
+        eventType: eventType,
+        timestamp: Date.now(),
+        url: window.location.href
+      } 
+    });
+  }
 
   document.addEventListener('DOMContentLoaded', function() {
     isNewPageLoad = true; // Reset first page load flag
