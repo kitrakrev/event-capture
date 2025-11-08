@@ -1272,9 +1272,20 @@
 
     // Flush any prebuffered events captured just after user hit Start
     flushPrebuffer(recordingStartAtMs);
-
-    // BrowserGym injection disabled: rely on fallback BIDs to avoid CSP issues
-    console.log('BrowserGym BID injection disabled; using fallback element IDs.');
+    // Inject BrowserGym script to mark DOM elements with data-bid attributes
+  try {
+    const injectionSuccess = await injectBrowserGymScript();
+    if (injectionSuccess) {
+      console.log('✅ BrowserGym injection successful');
+      startBrowserGymObserver();
+    } else {
+      console.warn('⚠️ BrowserGym injection failed, using fallback BIDs');
+    }
+  } catch (err) {
+    console.error('❌ BrowserGym injection error:', err);
+  }
+    // // BrowserGym injection disabled: rely on fallback BIDs to avoid CSP issues
+    // console.log('BrowserGym BID injection disabled; using fallback element IDs.');
 
   }
 
@@ -1483,6 +1494,7 @@
           resolve(false);
         };
         (document.head || document.documentElement).appendChild(script);
+        
       } catch (err) {
         console.error('BrowserGym injection error:', err);
         resolve(false);

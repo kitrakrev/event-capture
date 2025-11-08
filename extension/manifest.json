@@ -30,7 +30,7 @@
   // ],
   "web_accessible_resources": [
     {
-      "resources": ["event-config.json", "offscreen.html", "offscreen.js"],
+      "resources": ["event-config.json", "offscreen.html", "offscreen.js","browsergym-inject.js"],
       "matches": ["<all_urls>"]
     }
   ],
