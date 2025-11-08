@@ -302,7 +302,9 @@ class IFrameIdGenerator {
             "data-bid",   // attribute key to hold the BID
             "all"         // process every single element
         ]);
+        
         console.log("BrowserGym IDs set, warnings:", warnings);
+        window.browserGymInitialized = true;
         // Signal completion via custom event (content script can listen)
         document.dispatchEvent(new CustomEvent('browsergym-injection-complete', { 
             detail: { success: true, warnings: warnings }
