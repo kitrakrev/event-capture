@@ -393,7 +393,7 @@
     }
     // --- 4. Remove unnecessary attributes (but keep accessibility-relevant ones) ---
     const keepAttrs = [
-      'id', 'class', 'href', 'src', 'type', 'value', 'name', 'for'
+      'id', 'class', 'href', 'src', 'type', 'value', 'name', 'for', 'data-bid'
     ];
     clone.querySelectorAll('*').forEach(el => {
       for (const attr of Array.from(el.attributes)) {
