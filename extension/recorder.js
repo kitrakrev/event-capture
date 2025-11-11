@@ -367,20 +367,52 @@
     console.log('XXXXX approved html capture')
 
     const clone = document.documentElement.cloneNode(true);
-    // Inline all stylesheets
+
+    // --- 1. Remove scripts and noscripts ---
+    clone.querySelectorAll('script, noscript').forEach(el => el.remove());
+    // --- 2. Remove inline event handlers (e.g., onclick) ---
+    clone.querySelectorAll('*').forEach(el => {
+      for (const attr of Array.from(el.attributes)) {
+        if (attr.name.startsWith('on')) el.removeAttribute(attr.name);
+      }
+    });
+    // --- 3. Inline all stylesheets, minified ---
     const styles = Array.from(document.styleSheets);
     for (const sheet of styles) {
       try {
-        const rules = Array.from(sheet.cssRules).map(r => r.cssText).join('\n');
+        const rules = Array.from(sheet.cssRules)
+          .map(r => r.cssText.replace(/\s+/g, ' ').trim())
+          .join('');
         const style = document.createElement('style');
         style.textContent = rules;
         clone.querySelector('head').appendChild(style);
       } catch (err) {
-        // Some cross-origin stylesheets can’t be read due to CORS
+        // Cross-origin stylesheets may not be accessible
         console.warn('Skipped stylesheet:', sheet.href);
       }
     }
-    const currentHtml = '<!DOCTYPE html>\n' + clone.outerHTML;
+    // --- 4. Remove unnecessary attributes (but keep accessibility-relevant ones) ---
+    const keepAttrs = [
+      'id', 'class', 'href', 'src', 'type', 'value', 'name', 'for'
+    ];
+    clone.querySelectorAll('*').forEach(el => {
+      for (const attr of Array.from(el.attributes)) {
+        if (!keepAttrs.some(k => attr.name.startsWith(k))) {
+          el.removeAttribute(attr.name);
+        }
+      }
+    });
+    // --- 5. Remove heavy media sources ---
+    clone.querySelectorAll('img, video, source').forEach(el => {
+      el.removeAttribute('src');
+    });
+    
+    // --- 6. Minify the resulting HTML ---
+    const currentHtml =
+      '<!DOCTYPE html>\n' +
+      clone.outerHTML
+        .replace(/\s+/g, ' ')   // collapse whitespace
+        .replace(/> </g, '><'); // remove inter-tag spaces
     
     chrome.runtime.sendMessage({ 
       type: 'htmlCapture', 
