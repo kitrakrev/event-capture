@@ -31,6 +31,7 @@
   let isNewPageLoad = true;
   let HTMLCOOLDOWN = 3000;
   let htmlCaptureLocked = false;
+  let HTMLCOOLDOWNOVERRIDE = Date.now() - 3000;
 
   function requestHtmlCapture(eventTimestamp) {
     if (htmlCaptureLocked) {
@@ -40,7 +41,7 @@
     const now = Date.now();
     
     // Always capture immediately on first page load, otherwise require gap between
-    if (isNewPageLoad || (now - lastHtmlCapture) >= HTMLCOOLDOWN) {
+    if (isNewPageLoad || (now - HTMLCOOLDOWNOVERRIDE)<250 || (now - lastHtmlCapture) >= HTMLCOOLDOWN) {
       lastHtmlCapture = Date.now();
       captureHtml(eventTimestamp);
       isNewPageLoad = false;
@@ -392,16 +393,16 @@
       }
     }
     // --- 4. Remove unnecessary attributes (but keep accessibility-relevant ones) ---
-    const keepAttrs = [
-      'id', 'class', 'href', 'src', 'type', 'value', 'name', 'for', 'data-bid'
-    ];
-    clone.querySelectorAll('*').forEach(el => {
-      for (const attr of Array.from(el.attributes)) {
-        if (!keepAttrs.some(k => attr.name.startsWith(k))) {
-          el.removeAttribute(attr.name);
-        }
-      }
-    });
+    // const keepAttrs = [
+    //   'id', 'class', 'href', 'src', 'type', 'value', 'name', 'for', 'data-bid'
+    // ];
+    // clone.querySelectorAll('*').forEach(el => {
+    //   for (const attr of Array.from(el.attributes)) {
+    //     if (!keepAttrs.some(k => attr.name.startsWith(k))) {
+    //       el.removeAttribute(attr.name);
+    //     }
+    //   }
+    // });
     // --- 5. Remove heavy media sources ---
     clone.querySelectorAll('img, video, source').forEach(el => {
       el.removeAttribute('src');
@@ -424,6 +425,9 @@
         url: window.location.href
       } 
     });
+    if (eventType ==="change") {
+      HTMLCOOLDOWNOVERRIDE = Date.now();
+    }
   }
 
   document.addEventListener('DOMContentLoaded', function() {
