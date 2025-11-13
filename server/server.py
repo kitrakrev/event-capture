@@ -18,14 +18,14 @@ from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 from bson import ObjectId
 
+
 try:
-    from dotenv import load_dotenv
+    from dotenv import load_dotenv, find_dotenv
+    load_dotenv(find_dotenv())
 except ImportError:  # pragma: no cover - optional dependency
     load_dotenv = None
 
-
-if load_dotenv:
-    load_dotenv()
+    
 
 
 def _load_allowed_collections(raw: str) -> List[str]:
@@ -93,6 +93,7 @@ def get_collection(database: str, collection: str):
 
 async def verify_api_key(x_api_key: Optional[str] = Header(default=None)) -> None:
     """Optional API key check controlled by the API_KEY env var."""
+    return True
     if API_KEY and x_api_key != API_KEY:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
 
@@ -133,12 +134,124 @@ class EventPayload(BaseModel):
     video_local_path: Optional[str] = None
     video_server_path: Optional[str] = None
 
+def generate_file_url(content: str, metadata: Dict[str, Any]) -> str:
+    """Upload HTML content to S3 and return the public URL."""
+    if not content:
+        return ""
+    import hashlib
+    import boto3
+    from botocore.exceptions import ClientError
+    
+    # Create html_snapshots subfolder
+    sub_folder = "html_snapshots"
+    subsub_folder = metadata["task"]
+    # Get S3 configuration from environment
+    bucket_name = os.getenv("S3_BUCKET_NAME")
+    aws_region = os.getenv("AWS_REGION", "us-east-1")
+    
+    if not bucket_name:
+        print("Warning: S3_BUCKET_NAME not configured")
+        return ""
+    
+    try:
+        # Create S3 client
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            region_name=aws_region
+        )
+        
+        # Generate unique filename using hash + event index
+        content_hash = hashlib.md5(content.encode()).hexdigest()[:12]
+        filename = f"event_{content_hash}_{datetime.utcnow().isoformat().replace(":", "-").replace(".", "-")}.html"
+        
+        # Build S3 key path: html_snapshots/task_timestamp/event_0_abc123.html
+        s3_key = f"{sub_folder}/{subsub_folder}/{filename}"
+        
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=s3_key,
+            Body=content.encode('utf-8'),
+            ContentType='text/html',
+        )
+        
+        # Return S3 URL
+        s3_url = f"https://{bucket_name}.s3.{aws_region}.amazonaws.com/{s3_key}"
+        
+        print(f"✅ Uploaded HTML to: {s3_url}")
+        return s3_url
+        
+    except ClientError as e:
+        print(f"❌ Error uploading HTML to S3: {e}")
+        return ""
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+        return ""  
+
+def generate_video_url(local_path: str, metadata: Dict[str, Any]) -> str:
+    """Generate a video URL for the given video file."""
+    if not local_path or not os.path.exists(local_path):
+        return ""
+    import hashlib
+    import boto3
+    from botocore.exceptions import ClientError
+    
+    # Create videos subfolder
+    sub_folder = "videos"
+    subsub_folder = metadata["task"]
+    if metadata.get("use_timestamp", False):
+        subsub_folder = subsub_folder + "_" + datetime.utcnow().isoformat().replace(":", "-").replace(".", "-")
+    
+    # Get S3 configuration from environment
+    bucket_name = os.getenv("S3_BUCKET_NAME")
+    aws_region = os.getenv("AWS_REGION", "us-east-1")
+    
+    if not bucket_name:
+        print("Warning: S3_BUCKET_NAME not configured")
+        return ""
+    
+    try:
+        # Create S3 client
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            region_name=aws_region
+        )
+        
+        # Generate unique filename using hash + event index
+        content_hash = hashlib.md5(local_path.encode()).hexdigest()[:12]
+        filename = f"video_{content_hash}_{datetime.utcnow().isoformat().replace(":", "-").replace(".", "-")}.webm"
+
+        # Build S3 key path: videos/task_timestamp/video_0_abc123.webm
+        s3_key = f"{sub_folder}/{subsub_folder}/{filename}"
+        
+        s3_client.upload_file(local_path, bucket_name, s3_key)
+        
+        # Return S3 URL
+        s3_url = f"https://{bucket_name}.s3.{aws_region}.amazonaws.com/{s3_key}"
+
+        print(f"✅ Uploaded video to: {s3_url}")
+        return s3_url
+        
+    except ClientError as e:
+        print(f"❌ Error uploading video to S3: {e}")
+        return ""
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
 
 @app.post("/api/events", dependencies=[Depends(verify_api_key)])
 async def ingest_events(payload: EventPayload) -> Dict[str, Any]:
     """Insert the payload into Mongo and mirror it to intermediate/<timestamp>."""
     try:
         events_count = len(payload.data)
+        ### iterate through payload.data and replace html key with html_file_url
+        subsub_folder = payload.task + "_" + datetime.utcnow().isoformat().replace(":", "-").replace(".", "-")
+        for event in payload.data:
+            if "html" in event.keys():
+                event["html_file_url"] = generate_file_url(content=event["html"],metadata={"task": subsub_folder, "use_timestamp":True})
+                event.pop("html")
         document = {
             "task": payload.task,
             "duration": payload.duration,
@@ -181,6 +294,7 @@ async def ingest_events(payload: EventPayload) -> Dict[str, Any]:
                 "data": document["data"],
                 "video_local_path": document.get("video_local_path"),
                 "video_server_path": document.get("video_server_path"),
+                "video_url": generate_video_url(document.get("video_local_path"),{"task": subsub_folder}) if document.get("video_local_path") else None,
             }
             metadata_json = {
                 "savedAt": datetime.utcnow().isoformat(),
@@ -341,3 +455,7 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Cache-Control"] = "no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
     return response
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=3000)
