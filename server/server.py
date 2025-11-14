@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, validator
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 from bson import ObjectId
+from datetime import UTC
 
 
 try:
@@ -145,6 +146,7 @@ def generate_file_url(content: str, metadata: Dict[str, Any]) -> str:
     # Create html_snapshots subfolder
     sub_folder = "html_snapshots"
     subsub_folder = metadata["task"]
+    subsub_folder = subsub_folder.replace(" ", "_")
     # Get S3 configuration from environment
     bucket_name = os.getenv("S3_BUCKET_NAME")
     aws_region = os.getenv("AWS_REGION", "us-east-1")
@@ -164,11 +166,11 @@ def generate_file_url(content: str, metadata: Dict[str, Any]) -> str:
         
         # Generate unique filename using hash + event index
         content_hash = hashlib.md5(content.encode()).hexdigest()[:12]
-        filename = f"event_{content_hash}_{datetime.utcnow().isoformat().replace(":", "-").replace(".", "-")}.html"
-        
+        filename = f"event_{content_hash}_{datetime.now(UTC).isoformat().replace(":", "-").replace(".", "-")}.html"
+        filename = filename.replace(" ", "_")
         # Build S3 key path: html_snapshots/task_timestamp/event_0_abc123.html
         s3_key = f"{sub_folder}/{subsub_folder}/{filename}"
-        
+        s3_key = s3_key.replace(" ", "_")
         s3_client.put_object(
             Bucket=bucket_name,
             Key=s3_key,
@@ -201,8 +203,8 @@ def generate_video_url(local_path: str, metadata: Dict[str, Any]) -> str:
     sub_folder = "videos"
     subsub_folder = metadata["task"]
     if metadata.get("use_timestamp", False):
-        subsub_folder = subsub_folder + "_" + datetime.utcnow().isoformat().replace(":", "-").replace(".", "-")
-    
+        subsub_folder = subsub_folder + "_" + datetime.now(UTC).isoformat().replace(":", "-").replace(".", "-")
+    subsub_folder = subsub_folder.replace(" ", "_")
     # Get S3 configuration from environment
     bucket_name = os.getenv("S3_BUCKET_NAME")
     aws_region = os.getenv("AWS_REGION", "us-east-1")
@@ -222,8 +224,8 @@ def generate_video_url(local_path: str, metadata: Dict[str, Any]) -> str:
         
         # Generate unique filename using hash + event index
         content_hash = hashlib.md5(local_path.encode()).hexdigest()[:12]
-        filename = f"video_{content_hash}_{datetime.utcnow().isoformat().replace(":", "-").replace(".", "-")}.webm"
-
+        filename = f"video_{content_hash}_{datetime.now(UTC).isoformat().replace(":", "-").replace(".", "-")}.webm"
+        filename = filename.replace(" ", "_")
         # Build S3 key path: videos/task_timestamp/video_0_abc123.webm
         s3_key = f"{sub_folder}/{subsub_folder}/{filename}"
         
@@ -247,7 +249,7 @@ async def ingest_events(payload: EventPayload) -> Dict[str, Any]:
     try:
         events_count = len(payload.data)
         ### iterate through payload.data and replace html key with html_file_url
-        subsub_folder = payload.task + "_" + datetime.utcnow().isoformat().replace(":", "-").replace(".", "-")
+        subsub_folder = payload.task + "_" + datetime.now(UTC).isoformat().replace(":", "-").replace(".", "-")
         for event in payload.data:
             if "html" in event.keys():
                 event["html_file_url"] = generate_file_url(content=event["html"],metadata={"task": subsub_folder, "use_timestamp":True})
@@ -261,8 +263,11 @@ async def ingest_events(payload: EventPayload) -> Dict[str, Any]:
             "data": payload.data,
             "video_local_path": payload.video_local_path,
             "video_server_path": payload.video_server_path,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
+        # Create JSON-serializable copy for testing
+        # with open("document.json", "w") as f:
+        #     json.dump(document f, indent=2)
 
         inserted_id: Optional[ObjectId] = None
         mongo_ok = False
@@ -270,7 +275,7 @@ async def ingest_events(payload: EventPayload) -> Dict[str, Any]:
         if client is not None and DB_AVAILABLE:
             try:
                 collection = get_collection(ALLOWED_DB, EVENT_COLLECTION)
-                result = collection.insert_one(document)
+                # result = collection.insert_one(document)
                 inserted_id = result.inserted_id
                 mongo_ok = True
             except PyMongoError as exc:
@@ -281,7 +286,7 @@ async def ingest_events(payload: EventPayload) -> Dict[str, Any]:
         # Also write payload and metadata to root-level intermediate/<timestamp>
         try:
             project_root = Path(__file__).resolve().parent.parent
-            iso = datetime.utcnow().isoformat().replace(":", "-").replace(".", "-")
+            iso = datetime.now(UTC).isoformat().replace(":", "-").replace(".", "-")
             folder = project_root / "intermediate" / iso
             folder.mkdir(parents=True, exist_ok=True)
 
@@ -297,7 +302,7 @@ async def ingest_events(payload: EventPayload) -> Dict[str, Any]:
                 "video_url": generate_video_url(document.get("video_local_path"),{"task": subsub_folder}) if document.get("video_local_path") else None,
             }
             metadata_json = {
-                "savedAt": datetime.utcnow().isoformat(),
+                "savedAt": datetime.now(UTC).isoformat(),
                 "mongo": {"insertedId": str(inserted_id) if inserted_id else None, "ok": mongo_ok, "error": mongo_error},
                 "counts": {"events": len(document["data"])},
                 "paths": {
