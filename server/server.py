@@ -193,6 +193,8 @@ def generate_file_url(content: str, metadata: Dict[str, Any]) -> str:
 
 def generate_video_url(local_path: str, metadata: Dict[str, Any]) -> str:
     """Generate a video URL for the given video file."""
+    # add user root directory '~/' to the local path cross platform
+    local_path = os.path.join(os.path.expanduser("~"), local_path) ## works for linux and windows
     if not local_path or not os.path.exists(local_path):
         return ""
     import hashlib
@@ -263,11 +265,12 @@ async def ingest_events(payload: EventPayload) -> Dict[str, Any]:
             "data": payload.data,
             "video_local_path": payload.video_local_path,
             "video_server_path": payload.video_server_path,
+            "video_url": generate_video_url(payload.video_local_path,{"task": payload.task}),
             "timestamp": datetime.now(UTC).isoformat(),
         }
         # Create JSON-serializable copy for testing
         # with open("document.json", "w") as f:
-        #     json.dump(document f, indent=2)
+        #     f.write(json.dumps(document, indent=2))
 
         inserted_id: Optional[ObjectId] = None
         mongo_ok = False
@@ -275,7 +278,7 @@ async def ingest_events(payload: EventPayload) -> Dict[str, Any]:
         if client is not None and DB_AVAILABLE:
             try:
                 collection = get_collection(ALLOWED_DB, EVENT_COLLECTION)
-                # result = collection.insert_one(document)
+                result = collection.insert_one(document)
                 inserted_id = result.inserted_id
                 mongo_ok = True
             except PyMongoError as exc:
@@ -299,7 +302,7 @@ async def ingest_events(payload: EventPayload) -> Dict[str, Any]:
                 "data": document["data"],
                 "video_local_path": document.get("video_local_path"),
                 "video_server_path": document.get("video_server_path"),
-                "video_url": generate_video_url(document.get("video_local_path"),{"task": subsub_folder}) if document.get("video_local_path") else None,
+                "video_url": document.get("video_url"),
             }
             metadata_json = {
                 "savedAt": datetime.now(UTC).isoformat(),
